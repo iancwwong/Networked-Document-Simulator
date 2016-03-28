@@ -1,0 +1,43 @@
+# This is the server component of the e-book reader/server system
+
+import socket
+import subprocess
+from sys import argv
+
+# Extract the port number from args
+script, port_number_str = argv
+port_number = int(port_number_str)
+
+# Obtain the IP address
+tcp_ip = '127.0.0.1'
+
+# Prepare buffer size
+BUFFER_SIZE = 256
+
+# Maximum number of connections to this computer via TCP
+MAX_CONNECTIONS = 1
+
+# Obtain this computer's hostname
+hostname = subprocess.Popen(['hostname'], stdout = subprocess.PIPE).communicate()[0]
+hostname = hostname.rstrip()
+
+# Create the socket
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)	# SOCK_STREAM for tcp
+sock.bind((tcp_ip, port_number))
+sock.listen(MAX_CONNECTIONS)
+
+while True:
+	# Listen for connections
+	conn_ip, conn_id = sock.accept()
+	if (conn != 0):
+		print "Connection made with ",conn_id
+		data = conn.recv(BUFFER_SIZE)
+		print "Received data: %s"
+		
+		# Send a reply
+		conn.send("I see your message.")
+		conn.close()
+
+
+	
+
