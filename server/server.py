@@ -84,7 +84,7 @@ class ClientThread(threading.Thread):
 						# Exit message received
 						reply_msg = "Alright, laters!"
 						rsock.send(reply_msg)
-						listen_sockets.remove(rsock)
+						self.listen_sockets.remove(rsock)
 						self.client_stop = True
 
 					elif (msg_components[1] == "Debug"):
