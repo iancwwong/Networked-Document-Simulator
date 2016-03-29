@@ -1,3 +1,0 @@
-# This module represents a database for the server using a dict 
-
-database = {}
