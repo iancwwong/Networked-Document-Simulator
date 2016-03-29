@@ -77,6 +77,8 @@ class ClientThread(threading.Thread):
 					# Determine the type of information received
 					if (msg_components[1] == "Intro"):
 						# Intro message received
+						client_user_name = msg_components[2]
+						self.client.user_name = client_user_name
 						reply_msg = "I see! You're: " + msg_components[2]
 						rsock.send(reply_msg)				
 
@@ -122,16 +124,15 @@ serversock.bind((socket.gethostname(), port_number))
 serversock.listen(MAX_CONNECTIONS)
 print "Listening on port number: ", port_number
 
-# Prepare the list of sockets to listen for
-# Initially no clients, only the server socket
+# Prepare the server socket to listen for
 listen_sockets = [serversock]
 
 while True:
 
-	# Obtain lists of ready sockets returned by Select
+	# Obtain lists of sockets that are listenable
 	read_sockets, write_sockets, error_sockets = select.select(listen_sockets, [], [])
 
-	# Check each ready-to-read socket	
+	# Find the socket for the server in the list of ready sockets	
 	for rs in read_sockets:
 	
 		# Incoming connection request to server socket
