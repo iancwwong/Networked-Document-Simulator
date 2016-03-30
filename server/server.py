@@ -30,6 +30,20 @@ class ClientObj(object):
 		print "Operation mode: \t",self.opmode
 		print "Address: \t",self.addr
 
+# This class represents the database for the server
+class ServerDB(object):
+
+	# Constructor
+	def __init__(self):
+		# Create the 3 files that store information about a forum post
+		self.post_info = open("post_info",'w')
+		self.post_content = open("post_content",'w')
+		self.post_users = open("post_users",'w')
+		
+		# Maintain a list of serial numbers / post ID's
+		self.post_ids = []
+		
+
 # This is the thread that is executed when a server serves a single client
 class ClientThread(threading.Thread):
 
@@ -123,6 +137,9 @@ serversock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)	# re-usable soc
 serversock.bind((socket.gethostname(), port_number))
 serversock.listen(MAX_CONNECTIONS)
 print "Listening on port number: ", port_number
+
+# Create the server database
+server_db = ServerDB()
 
 # Prepare the server socket to listen for
 listen_sockets = [serversock]
