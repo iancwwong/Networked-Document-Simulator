@@ -1,2 +1,6 @@
 # Backup python files
 *.py~
+
+# Server files
+post_*
+*~
