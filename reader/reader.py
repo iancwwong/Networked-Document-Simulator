@@ -31,7 +31,10 @@ class Book(object):
 	# Return the string in a particular page with message indication
 	# Note: Assumes pageNum starts at 1 (NOT index based)
 	def displayPage(self,pageNum):
-		print self.pages[pageNum-1].showPage()
+		try:
+			print self.pages[pageNum-1].showPage()
+		except IndexError:
+			print "No such page exists"
 
 # This class represents a page
 # Note: a page has directory '[bookname]/[bookname]_page[pagenumber]'
@@ -131,10 +134,6 @@ for book in booklist:
 	book_dir, book_author = book
 	books[book_dir] = Book(book_dir, book_author)
 
-# DEBUGGING
-books["joyce"].displayPage(3)
-exit()
-
 # Prepare the buffer size
 BUFFER_SIZE = 1024
 
@@ -169,8 +168,22 @@ while (not reader_exit_req):
 		sock.send(exit_message)
 		reader_exit_req = True
 
+	elif (user_input[0] == 'display'):
+		if (len(user_input) < 3):
+			print "Usage: display [book_name] [page_number]"
+			continue
+		
+		# Display the page of the specified book
+		book_name = user_input[1]
+		page_num = int(user_input[2])
+		try:
+			books[book_name].displayPage(page_num)
+		except KeyError:
+			print "Book name '%s' invalid" % book_name
+			continue	
+
 	else:
-		print "Unrecognised command:",user_input
+		print "Unrecognised command:", user_input[0]
 
 # close the connection
 print "Shutting down reader..."
