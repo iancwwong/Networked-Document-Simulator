@@ -13,18 +13,19 @@ import os.path
 # This class represents a book
 class Book(object):
 
-	def __init__(self, bookname):
-		self.bookname = bookname
+	def __init__(self, bookName, bookAuthor):
+		self.bookname = bookName
+		self.author = bookAuthor
 		
 		# Construct the book with pages and lines
 		self.pages = []
 
 		# Determine number of pages
-		self.numpages = len([name for name in os.listdir(bookname)])
+		self.numpages = len([name for name in os.listdir(bookName)])
 
 		# Initialise the page objects by reading each page file
 		for pagenum in range(1,self.numpages+1):
-			pageObj = Page(bookname, pagenum)	# page numbers need an offset
+			pageObj = Page(bookName, pagenum)	# page numbers need an offset
 			self.pages.append(pageObj)
 
 	# Return the string in a particular page with message indication
@@ -114,17 +115,21 @@ print "At port: \t", server_port
 print "Mode: \t\t",opmode
 print "Poll interval: \t",poll_interval
 
-# Determine list of books based on the file
-# containing information about all books
-bookListInfo = open('booklist','r').read().split('\n')
-for line in bookListInfo
-bookList.remove('')
+# Parse information about the books contained in the 'booklist' file
+# with format: [book folder name],[book author]
+booklist_file = open('booklist','r').read().split('\n')
+booklist_file.remove('')
+booklist = []
+for line in booklist_file:
+	line = line.split(',')
+	booklist.append((line[0], line[1]))
 
 # Initialise Book objects, storing them into a dict
 print "Loading books..."
 books = {}
-for bookname in bookList:
-	books[bookname] = Book(bookname)
+for book in booklist:
+	book_dir, book_author = book
+	books[book_dir] = Book(book_dir, book_author)
 
 # DEBUGGING
 books["joyce"].displayPage(3)
@@ -155,8 +160,9 @@ while (not reader_exit_req):
 	
 	# Read and parse the user input
 	user_input = raw_input('> ')
+	user_input = user_input.split(' ')
 
-	if (user_input == 'exit'):	
+	if (user_input[0] == 'exit'):	
 		# Send an exit message to server before shutting down reader
 		print "Saying goodbye to server"
 		exit_message = "#Exit#" + user_name
