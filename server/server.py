@@ -42,6 +42,19 @@ class ServerDB(object):
 		
 		# Maintain a list of serial numbers / post ID's
 		self.post_ids = []
+
+	# Insert a new forum post into database
+	# given a ForumPost object and the username who posted it
+	def insertPost(forumPost, author):
+		
+		# Generate an id for the post
+		new_post_id = self.generatePostID()
+		while (key in self.post_ids):
+			new_post_id = self.generatePostID()
+		
+		self.post_ids.append(new_post_id)
+
+		
 		
 
 # This is the thread that is executed when a server serves a single client
@@ -90,16 +103,14 @@ class ClientThread(threading.Thread):
 
 					# Determine the type of information received
 					if (msg_components[1] == "Intro"):
-						# Intro message received
+						# Intro message received - process information
 						client_user_name = msg_components[2]
+						client_opmode = msg_components[3]
 						self.client.user_name = client_user_name
-						reply_msg = "I see! You're: " + msg_components[2]
-						rsock.send(reply_msg)				
+						self.client.opmode = client_opmode			
 
 					elif (msg_components[1] == "Exit"):
-						# Exit message received
-						reply_msg = "Alright, laters!"
-						rsock.send(reply_msg)
+						# Exit message received - cut connection with client
 						self.listen_sockets.remove(rsock)
 						self.client_stop = True
 
@@ -125,10 +136,14 @@ class ClientThread(threading.Thread):
 script, port_number_str = argv
 port_number = int(port_number_str)
 
+# Create the server database
+server_db = ServerDB()
+print "Initialised database for forum discussion posts"
+
 # Prepare message buffer size
 BUFFER_SIZE = 1024
 
-# Maximum number of connections to this computer via TCP
+# Maximum number of queued connections
 MAX_CONNECTIONS = 1
 
 # Create the socket
@@ -136,10 +151,8 @@ serversock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)		# TCP connection
 serversock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)	# re-usable socket
 serversock.bind((socket.gethostname(), port_number))
 serversock.listen(MAX_CONNECTIONS)
-print "Listening on port number: ", port_number
-
-# Create the server database
-server_db = ServerDB()
+print "Listening on port number:", port_number
+print "Name of this server:",socket.gethostname()
 
 # Prepare the server socket to listen for
 listen_sockets = [serversock]
