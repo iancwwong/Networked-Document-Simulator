@@ -36,6 +36,22 @@ class Book(object):
 		except IndexError:
 			print "No such page exists"
 
+	# Set a post to be read at a particular line in a particular page
+	# NOTE: Page and Line are NOT index based as arguments
+	def setPostRead(self, pageNum, lineNum):
+		try:
+			self.pages[pageNum-1].setPostRead(lineNum)
+		except IndexError:
+			print "No such page exists"
+
+	# Set a post to be read at a particular line in a particular page
+	# NOTE: Page and Line are NOT index based as arguments
+	def setPostUnread(self, pageNum, lineNum):
+		try:
+			self.pages[pageNum-1].setPostUnread(lineNum)
+		except IndexError:
+			print "No such page exists"
+
 # This class represents a page
 # Note: a page has directory '[bookname]/[bookname]_page[pagenumber]'
 class Page(object):
@@ -64,7 +80,24 @@ class Page(object):
 			pageStr = pageStr + line.showLine() + "\n"
 		return pageStr	
 
-# This is a class that represents a line
+	# Set a post to be read at a particular line
+	# NOTE: lineNum is NOT index based
+	def setPostRead(self, lineNum):
+		try:
+			self.lines[lineNum-1].setPostRead()
+		except IndexError:
+			print "No such line exists"
+
+	# Set a post to be read at a particular line in a particular page
+	# NOTE: Page and Line are NOT index based as arguments
+	def setPostUnread(self, lineNum):
+		try:
+			self.lines[lineNum-1].setPostUnread()
+		except IndexError:
+			print "No such page exists"
+	
+
+# This is a class that represents a line on a page
 class Line(object):
 
 	# Constants	
@@ -74,8 +107,7 @@ class Line(object):
 
 	# Corresponding Post Characters
 	post_chars = { NO_POST: ' ', UNREAD_POST: 'n', READ_POST: 'm' }
-	
-	
+		
 	def __init__(self,lineStr,lineNum):
 		# Set the line number
 		self.linenum = lineNum
@@ -96,6 +128,19 @@ class Line(object):
 	# with format: post status, 2 spaces, line number, 1 space, line content		
 	def showLine(self):
 		return (self.post_chars[self.poststatus] + '  ' + str(self.linenum) + ' ' + self.linecontent)
+
+	# Set the status of forum posts on this line as 'Read'
+	def setPostRead(self):
+		self.poststatus = self.READ_POST
+
+	# Set the status of forum posts on this line as 'Unread'
+	def setPostUnread(self):
+		self.poststatus = self.UNREAD_POST
+		
+# This class represents the database for the reader
+#class ReaderDB(object):
+
+	#def __init__(self):
 		
 
 # ----------------------------------------------------
@@ -131,8 +176,16 @@ for line in booklist_file:
 print "Loading books..."
 books = {}
 for book in booklist:
-	book_dir, book_author = book
+	book_dir, book_author = book			# Book_dir is equivalent to book's name
 	books[book_dir] = Book(book_dir, book_author)
+
+# DEBUGGING
+books['shelley'].setPostRead(3,3)
+books['shelley'].displayPage(3)
+print ""
+books['shelley'].setPostUnread(3,4)
+books['shelley'].displayPage(3)
+exit()
 
 # Prepare the buffer size
 BUFFER_SIZE = 1024
