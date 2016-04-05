@@ -138,23 +138,73 @@ class Line(object):
 		self.poststatus = self.UNREAD_POST
 		
 # This class represents the database for the reader
+# Contains a database dict with tuples of the post info, and post content
+# ie db = { "bookname": (postInfo, postContent) }
+#    postInfo = { "postID": (senderName, pageNumber, lineNumber, read/unread) }
+#    postContent = { "postID": content }
 class ReaderDB(object):
-
-	dbFiles = {}
+	
+	db = {}
 
 	# Constructor, given the parsed information from the 'booklist' file
 	def __init__(self, booklist):
-		# Create database files for each book: 
-		# 1 for post information, 1 for post content
+		# Initialise the dicts
 		for book in booklist:
-			book_name, book_author = book
-			bookDBPostInfoDir = book_name + "/post_info"
-			bookDBPostInfo = open(bookDBPostInfoDir, 'w')
-	
-			bookDBPostContentDir = book_name + "/post_content"
-			bookDBPostContent = open(bookDBPostContentDir, 'w')
+			bookname, bookauthor = book
+			self.db[bookname] = {}
 
-			self.dbFiles[book_dir] = (bookDBPostInfo, bookDBPostContent)
+	# Insert a new post, given a ForumPostObj
+	#def insertPost(self, forumPost):
+		
+		
+
+# This class represents a forum post
+# postInfoString: '#PostInfo#Id#SenderName#PageNumber#LineNumber#Read/Unread'
+# postContent: '#PostContent#Id#Content'
+class ForumPostObj(object):
+	
+	# Constants
+	UNREAD = 1
+	READ = 2	
+
+	# Constructor given the two strings that formulate the post
+	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber#Read/Unread'
+	# postContentString: 	'#PostContent#Id#Content'
+	def __init__(self, postInfoString, postContentString):
+		# Split strings on '#'
+		postInfoComponents = postInfoString.split('#')		
+		postContentComponents = postContentString.split('#')
+
+		print "Postinfcomp:",postInfoComponents
+		print "PostContComp:",postContentComponents
+
+		# Check that the two given id's are the same
+		if (postInfoComponents[2] != postContentComponents[2]):
+			print "Error creating forum post object - ID's are not the same!"
+			return
+		
+		# Parse and set the forum post based on the split strings
+		self.postID = postInfoComponents[2]
+		self.sendername = postInfoComponents[3]	
+		self.bookname = postInfoComponents[4]
+		self.pagenumber = int(postInfoComponents[5])
+		self.linenumber = int(postInfoComponents[6])
+		self.readstatus = int(postInfoComponents[7])
+		self.postcontent = postContentComponents[3]
+
+	# Show details
+	def showPostDetails(self):
+		print "ID:",self.postID
+		print "Sender:",self.sendername
+		print "Book name:",self.bookname
+		print "Page:",self.pagenumber
+		print "Line:",self.linenumber
+		if (self.readstatus == self.UNREAD):
+			print "Read: Unread"
+		elif (self.readstatus == self.READ):
+			print "Read: Read"
+		print "Content:",self.postcontent
+
 
 # ----------------------------------------------------
 # MAIN
@@ -197,7 +247,12 @@ print "Initialising reader database..."
 readerDB = ReaderDB(booklist)
 
 # DEBUGGING
-
+	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber#Read/Unread'
+	# postContentString: 	'#PostContent#Id#Content'
+postInfoStr = "#PostInfo#3093#iancwwong#shelley#2#9#1"
+postContentStr = "#PostContent#3093#Why is this line blank?"
+forumPostObj = ForumPostObj(postInfoStr, postContentStr)
+forumPostObj.showPostDetails()
 exit()
 
 # Prepare the buffer size
