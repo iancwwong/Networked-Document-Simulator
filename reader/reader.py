@@ -138,10 +138,23 @@ class Line(object):
 		self.poststatus = self.UNREAD_POST
 		
 # This class represents the database for the reader
-#class ReaderDB(object):
+class ReaderDB(object):
 
-	#def __init__(self):
-		
+	dbFiles = {}
+
+	# Constructor, given the parsed information from the 'booklist' file
+	def __init__(self, booklist):
+		# Create database files for each book: 
+		# 1 for post information, 1 for post content
+		for book in booklist:
+			book_name, book_author = book
+			bookDBPostInfoDir = book_name + "/post_info"
+			bookDBPostInfo = open(bookDBPostInfoDir, 'w')
+	
+			bookDBPostContentDir = book_name + "/post_content"
+			bookDBPostContent = open(bookDBPostContentDir, 'w')
+
+			self.dbFiles[book_dir] = (bookDBPostInfo, bookDBPostContent)
 
 # ----------------------------------------------------
 # MAIN
@@ -179,12 +192,12 @@ for book in booklist:
 	book_dir, book_author = book			# Book_dir is equivalent to book's name
 	books[book_dir] = Book(book_dir, book_author)
 
+# Initialise Reader Database
+print "Initialising reader database..."
+readerDB = ReaderDB(booklist)
+
 # DEBUGGING
-books['shelley'].setPostRead(3,3)
-books['shelley'].displayPage(3)
-print ""
-books['shelley'].setPostUnread(3,4)
-books['shelley'].displayPage(3)
+
 exit()
 
 # Prepare the buffer size
