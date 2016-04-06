@@ -143,6 +143,10 @@ class Line(object):
 #    postInfo = { "postID": (senderName, pageNumber, lineNumber, read/unread) }
 #    postContent = { "postID": content }
 class ReaderDB(object):
+
+	# Constants
+	UNREAD = 1
+	READ = 2
 	
 	# Storing forum posts for each book
 	db = {}
@@ -173,7 +177,29 @@ class ReaderDB(object):
 			postContent[forumPost.postID] = forumPost.postcontent
 			
 		except KeyError:
-			print "Error: Book %s does not exist in database" % (forumPost.bookname)	
+			print "Error: Book %s does not exist in database" % (forumPost.bookname)
+
+	# Send a list of post statuses at specific books, pages, and lines
+	# Format: [ (status, bookname, pagenum, linenum) ]
+	def getPostsStatus(self):
+		statusList = []
+		
+		# Loop through each book
+		for bookname in self.db.keys():
+			
+			# Loop through each postInfo
+			# Check if there are any posts for the bookname
+			if (not self.db[bookname]):
+				continue
+			postInfo, postContent = self.db[bookname]
+			for postID in postInfo.keys():
+				
+				# Add post status to list
+				sender, bookname, pagenumber, linenumber, readstatus = postInfo[postID]
+				statusList.append((readstatus, bookname, pagenumber, linenumber))		
+
+		return statusList
+		
 
 # This class represents a forum post
 class ForumPostObj(object):
@@ -209,6 +235,35 @@ class ForumPostObj(object):
 # MAIN
 # ----------------------------------------------------
 
+def runDBTests():
+	# DEBUGGING
+
+	# Test inserting forum posts
+	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber#Read/Unread'
+	# postContentString: 	'#PostContent#Id#Content'
+	postInfoStr = "#PostInfo#3093#iancwwong#shelley#2#9#1"
+	postContentStr = "#PostContent#3093#Why is this line blank?"
+	forumPostObj = ForumPostObj(postInfoStr, postContentStr)
+	readerDB.insertPost(forumPostObj)
+
+	postInfoStr = "#PostInfo#3094#thetoxicguy#shelley#2#9#1"
+	postContentStr = "#PostContent#3094#Because the author wrote it that way, you retard?"
+	forumPostObj = ForumPostObj(postInfoStr, postContentStr)
+	readerDB.insertPost(forumPostObj)
+
+	postInfoStr = "#PostInfo#2041#jasonng#exupery#3#4#1"
+	postContentStr = "#PostContent#2041#What's this line talking about?"
+	forumPostObj = ForumPostObj(postInfoStr, postContentStr)
+	readerDB.insertPost(forumPostObj)
+
+	postInfoStr = "#PostInfo#5699#mohawk#joyce#1#2#1"
+	postContentStr = "#PostContent#5699#Repetition of 'my' is used."
+	forumPostObj = ForumPostObj(postInfoStr, postContentStr)
+	readerDB.insertPost(forumPostObj)
+
+	# Get status list
+	print "Post statuses: ",readerDB.getPostsStatus()
+
 #Usage: python reader.py mode polling_interval user_name server_name server_port_number
 
 # Extract information from arguments provided
@@ -234,24 +289,22 @@ for line in booklist_file:
 	line = line.split(',')
 	booklist.append((line[0], line[1]))
 
+# Initialise Reader Database
+print "Initialising reader database..."
+readerDB = ReaderDB(booklist)
+
 # Initialise Book objects, storing them into a dict
 print "Loading books..."
 books = {}
 for book in booklist:
 	book_dir, book_author = book			# Book_dir is equivalent to book's name
 	books[book_dir] = Book(book_dir, book_author)
-
-# Initialise Reader Database
-print "Initialising reader database..."
-readerDB = ReaderDB(booklist)
+	
+	# Link the book with the database
+	books[book_dir].linkDB(readerDB)
 
 # DEBUGGING
-	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber#Read/Unread'
-	# postContentString: 	'#PostContent#Id#Content'
-postInfoStr = "#PostInfo#3093#iancwwong#shelley#2#9#1"
-postContentStr = "#PostContent#3093#Why is this line blank?"
-forumPostObj = ForumPostObj(postInfoStr, postContentStr)
-readerDB.insertPost(forumPostObj)
+runDBTests()
 exit()
 
 # Prepare the buffer size
