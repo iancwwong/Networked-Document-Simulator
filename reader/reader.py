@@ -13,6 +13,10 @@ import os.path
 # This class represents a book
 class Book(object):
 
+	# Constants
+	UNREAD_POST = 1
+	READ_POST = 2
+
 	def __init__(self, bookName, bookAuthor):
 		self.bookname = bookName
 		self.author = bookAuthor
@@ -35,6 +39,26 @@ class Book(object):
 			print self.pages[pageNum-1].showPage()
 		except IndexError:
 			print "No such page exists"
+
+	# Link up the book with a database for queries about post statuses
+	def linkDB(self, dbObj):
+		self.db = dbObj
+	
+	# Updates the book by changing the post status on certain lines
+	# Involves querying the linked database
+	def update(self):
+		
+		# Obtain the list of posts with their statuses
+		postsStatuses = self.db.getBookPostStatuses(self.bookname)
+		
+		# Loop through each post and set read/unread accordingly
+		for postTuple in postsStatuses:
+			# Format: [ (status, bookname, pagenum, linenum) ]
+			status, pagenum, linenum = postTuple
+			if (status == self.UNREAD_POST):
+				self.setPostUnread(pagenum, linenum)
+			elif (status == self.READ_POST):
+				self.setPostRead(pagenum, linenum)
 
 	# Set a post to be read at a particular line in a particular page
 	# NOTE: Page and Line are NOT index based as arguments
@@ -179,26 +203,26 @@ class ReaderDB(object):
 		except KeyError:
 			print "Error: Book %s does not exist in database" % (forumPost.bookname)
 
-	# Send a list of post statuses at specific books, pages, and lines
-	# Format: [ (status, bookname, pagenum, linenum) ]
-	def getPostsStatus(self):
+	# Send a list of post statuses at a specific book, on pages and lines
+	# Format: [ (status, pagenum, linenum) ]
+	def getBookPostStatuses(self, bookname):
 		statusList = []
 		
-		# Loop through each book
-		for bookname in self.db.keys():
-			
-			# Loop through each postInfo
-			# Check if there are any posts for the bookname
+		# Examine posts in the given bookname
+		try:
 			if (not self.db[bookname]):
-				continue
+				return []
 			postInfo, postContent = self.db[bookname]
 			for postID in postInfo.keys():
 				
 				# Add post status to list
 				sender, bookname, pagenumber, linenumber, readstatus = postInfo[postID]
-				statusList.append((readstatus, bookname, pagenumber, linenumber))		
+				statusList.append((readstatus, pagenumber, linenumber))
 
-		return statusList
+			return statusList
+
+		except KeyError:
+			print "Error: Book %s does not exist in database" % (bookname)
 		
 
 # This class represents a forum post
@@ -261,8 +285,11 @@ def runDBTests():
 	forumPostObj = ForumPostObj(postInfoStr, postContentStr)
 	readerDB.insertPost(forumPostObj)
 
-	# Get status list
-	print "Post statuses: ",readerDB.getPostsStatus()
+	# Update the books
+	books['shelley'].displayPage(2)
+	print "Updating the book..."
+	books['shelley'].update()
+	books['shelley'].displayPage(2)
 
 #Usage: python reader.py mode polling_interval user_name server_name server_port_number
 
