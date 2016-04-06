@@ -144,6 +144,7 @@ class Line(object):
 #    postContent = { "postID": content }
 class ReaderDB(object):
 	
+	# Storing forum posts for each book
 	db = {}
 
 	# Constructor, given the parsed information from the 'booklist' file
@@ -154,13 +155,27 @@ class ReaderDB(object):
 			self.db[bookname] = {}
 
 	# Insert a new post, given a ForumPostObj
-	#def insertPost(self, forumPost):
-		
-		
+	# NOTE: Assumes the ForumPostObj is complete (ie contains ALL information)
+	def insertPost(self, forumPost):
+		try:
+			# Check whether there are tuples in the db for the book
+			if (bool(self.db[forumPost.bookname]) == False):
+				# Initialise the post info and post content dicts
+				postInfo = {}
+				postContent = {}
+				self.db[forumPost.bookname] = (postInfo, postContent)
+
+			# Complete the post info and post content dicts
+			postInfo, postContent = self.db[forumPost.bookname]
+			postInfo[forumPost.postID] = \
+				(forumPost.sendername, forumPost.bookname, forumPost.pagenumber, \
+				forumPost.linenumber, forumPost.readstatus)
+			postContent[forumPost.postID] = forumPost.postcontent
+			
+		except KeyError:
+			print "Error: Book %s does not exist in database" % (forumPost.bookname)	
 
 # This class represents a forum post
-# postInfoString: '#PostInfo#Id#SenderName#PageNumber#LineNumber#Read/Unread'
-# postContent: '#PostContent#Id#Content'
 class ForumPostObj(object):
 	
 	# Constants
@@ -175,9 +190,6 @@ class ForumPostObj(object):
 		postInfoComponents = postInfoString.split('#')		
 		postContentComponents = postContentString.split('#')
 
-		print "Postinfcomp:",postInfoComponents
-		print "PostContComp:",postContentComponents
-
 		# Check that the two given id's are the same
 		if (postInfoComponents[2] != postContentComponents[2]):
 			print "Error creating forum post object - ID's are not the same!"
@@ -191,19 +203,6 @@ class ForumPostObj(object):
 		self.linenumber = int(postInfoComponents[6])
 		self.readstatus = int(postInfoComponents[7])
 		self.postcontent = postContentComponents[3]
-
-	# Show details
-	def showPostDetails(self):
-		print "ID:",self.postID
-		print "Sender:",self.sendername
-		print "Book name:",self.bookname
-		print "Page:",self.pagenumber
-		print "Line:",self.linenumber
-		if (self.readstatus == self.UNREAD):
-			print "Read: Unread"
-		elif (self.readstatus == self.READ):
-			print "Read: Read"
-		print "Content:",self.postcontent
 
 
 # ----------------------------------------------------
@@ -252,7 +251,7 @@ readerDB = ReaderDB(booklist)
 postInfoStr = "#PostInfo#3093#iancwwong#shelley#2#9#1"
 postContentStr = "#PostContent#3093#Why is this line blank?"
 forumPostObj = ForumPostObj(postInfoStr, postContentStr)
-forumPostObj.showPostDetails()
+readerDB.insertPost(forumPostObj)
 exit()
 
 # Prepare the buffer size
