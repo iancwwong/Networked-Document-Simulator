@@ -236,27 +236,47 @@ class ReaderDB(object):
 			bookname, bookauthor = book
 			self.db[bookname] = {}
 
-	# Insert a new post, given a ForumPostObj
-	# NOTE: Assumes the ForumPostObj is complete (ie contains ALL information)
+	# Insert a new post, given two strings:
+	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber#Read/Unread'
+	# postContentString: 	'#PostContent#Id#Content' 
 	# NOTE: Each postID corresponds to exactly 1 postInfo and postContent entry
-	def insertPost(self, forumPost):
+	def insertPost(self, postInfoStr, postContentStr):
+
+		# Parse the given strings
+
+		# Split strings on '#'
+		postInfoComponents = postInfoStr.split('#')		
+		postContentComponents = postContentStr.split('#')
+
+		# Check that the two given id's are the same
+		if (postInfoComponents[2] != postContentComponents[2]):
+			print "Error creating forum post object - ID's are not the same!"
+			return
+		
+		# Parse and set the forum post based on the split strings
+		postID = postInfoComponents[2]
+		sendername = postInfoComponents[3]	
+		bookname = postInfoComponents[4]
+		pagenumber = int(postInfoComponents[5])
+		linenumber = int(postInfoComponents[6])
+		readstatus = int(postInfoComponents[7])
+		postcontent = postContentComponents[3]
+
 		try:
 			# Check whether there are tuples in the db for the book
-			if (bool(self.db[forumPost.bookname]) == False):
+			if (bool(self.db[bookname]) == False):
 				# Initialise the post info and post content dicts
 				postInfo = {}
 				postContent = {}
-				self.db[forumPost.bookname] = (postInfo, postContent)
+				self.db[bookname] = (postInfo, postContent)
 
 			# Complete the post info and post content dicts
-			postInfo, postContent = self.db[forumPost.bookname]
-			postInfo[forumPost.postID] = \
-				(forumPost.sendername, forumPost.bookname, forumPost.pagenumber, \
-				forumPost.linenumber, forumPost.readstatus)
-			postContent[forumPost.postID] = forumPost.postcontent
+			postInfo, postContent = self.db[bookname]
+			postInfo[postID] = (sendername, bookname, pagenumber, linenumber, readstatus)
+			postContent[postID] = postcontent
 			
 		except KeyError:
-			print "Error: Book %s does not exist in database" % (forumPost.bookname)
+			print "Error: Book %s does not exist in database" % (bookname)
 
 	# Send a list of post statuses at a specific book, on pages and lines
 	# Format: [ (status, pagenum, linenum) ]
@@ -321,18 +341,6 @@ class ReaderDB(object):
 				postInfo[readPostID] = (sendername, bookname, pagenumber, linenumber, self.READ)
 				return	
 
-	# Show all contents in db
-	def show(self):
-		# Loop through all books and posts
-		for bookName in self.db.keys():
-			print "Bookname:", bookName
-			if (bool(self.db[bookName]) == False):
-				return
-			postInfo, postContent = self.db[bookName]
-			for postID in postInfo.keys():
-				print postInfo[postID]
-				print postContent[postID]
-
 	# Export db as a string
 	# NOTE: essentially same format as ForumPostObj
 	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber#Read/Unread'
@@ -353,37 +361,6 @@ class ReaderDB(object):
 				dbStr = dbStr + "#PostContent#" + str(postID) + "#" + postcontent + "\n"
 		return dbStr	
 
-# This class represents a forum post
-# NOTE: This could be redundant
-class ForumPostObj(object):
-	
-	# Constants
-	UNREAD = 1
-	READ = 2	
-
-	# Constructor given the two strings that formulate the post
-	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber#Read/Unread'
-	# postContentString: 	'#PostContent#Id#Content'
-	def __init__(self, postInfoString, postContentString):
-		# Split strings on '#'
-		postInfoComponents = postInfoString.split('#')		
-		postContentComponents = postContentString.split('#')
-
-		# Check that the two given id's are the same
-		if (postInfoComponents[2] != postContentComponents[2]):
-			print "Error creating forum post object - ID's are not the same!"
-			return
-		
-		# Parse and set the forum post based on the split strings
-		self.postID = postInfoComponents[2]
-		self.sendername = postInfoComponents[3]	
-		self.bookname = postInfoComponents[4]
-		self.pagenumber = int(postInfoComponents[5])
-		self.linenumber = int(postInfoComponents[6])
-		self.readstatus = int(postInfoComponents[7])
-		self.postcontent = postContentComponents[3]
-
-
 # ----------------------------------------------------
 # MAIN
 # ----------------------------------------------------
@@ -396,23 +373,19 @@ def runDBTests():
 	# postContentString: 	'#PostContent#Id#Content'
 	postInfoStr = "#PostInfo#3093#iancwwong#shelley#2#9#1"
 	postContentStr = "#PostContent#3093#Why is this line blank?"
-	forumPostObj = ForumPostObj(postInfoStr, postContentStr)
-	readerDB.insertPost(forumPostObj)
+	readerDB.insertPost(postInfoStr, postContentStr)
 
 	postInfoStr = "#PostInfo#3094#thetoxicguy#shelley#2#9#1"
 	postContentStr = "#PostContent#3094#Because the author wrote it that way, you retard?"
-	forumPostObj = ForumPostObj(postInfoStr, postContentStr)
-	readerDB.insertPost(forumPostObj)
+	readerDB.insertPost(postInfoStr, postContentStr)
 
 	postInfoStr = "#PostInfo#2041#jasonng#exupery#3#4#1"
 	postContentStr = "#PostContent#2041#What's this line talking about?"
-	forumPostObj = ForumPostObj(postInfoStr, postContentStr)
-	readerDB.insertPost(forumPostObj)
+	readerDB.insertPost(postInfoStr, postContentStr)
 
 	postInfoStr = "#PostInfo#5699#mohawk#joyce#1#2#1"
 	postContentStr = "#PostContent#5699#Repetition of 'my' is used."
-	forumPostObj = ForumPostObj(postInfoStr, postContentStr)
-	readerDB.insertPost(forumPostObj)
+	readerDB.insertPost(postInfoStr, postContentStr)
 
 	# Update the books
 	#books['shelley'].displayPage(2)
