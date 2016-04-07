@@ -71,7 +71,8 @@ class Book(object):
 		try:
 			# Check that the lineNum is valid
 			if (not self.pages[pageNum-1].hasLine(lineNum)):
-				print "Error: line number %d not found." % pageNum
+				print "Error: line number %d not found." % lineNum
+				return ""
 
 			# Obtain the list of posts for the particular page and line
 			# Format: [ (postID, senderName, content, read/unread) ]
@@ -81,21 +82,24 @@ class Book(object):
 			print "From book by %s, Page %d, Line number %d:" % (self.author, pageNum, lineNum)	
 			print '"%s"' % self.pages[pageNum-1].getLineContent(lineNum)
 			print "Displaying posts:"
-			for post in posts:
-				postID, senderName, postcontent, readStatus = post
+			if (len(posts) == 0):
+				print "\tNo posts to display."
+			else:
+				for post in posts:
+					postID, senderName, postcontent, readStatus = post
 		
-				# Construct the string to be printed, containing the post
-				printStr = ""
-				if (readStatus == self.UNREAD_POST):
-					printStr = printStr + "[UNREAD]"
-				printStr = printStr + "\t" + str(postID) + " " + senderName + ": " + postcontent
-				print printStr
+					# Construct the string to be printed, containing the post
+					printStr = ""
+					if (readStatus == self.UNREAD_POST):
+						printStr = printStr + "[UNREAD]"
+					printStr = printStr + "\t" + str(postID) + " " + senderName + ": " + postcontent
+					print printStr
 
-				# Set the post to be read in the database
-				self.db.setRead(postID)
+					# Set the post to be read in the database
+					self.db.setRead(postID)
 
-			# Set the posts on the line to be 'read'
-			self.setPostRead(pageNum, lineNum)
+				# Set the posts on the line to be 'read'
+				self.setPostRead(pageNum, lineNum)
 
 		except KeyError:
 			print "Error: Page not found"		
@@ -119,7 +123,7 @@ class Book(object):
 	# Checks whether the page exists
 	# NOTE: pageNum is NOT index based
 	def hasPage(self, pageNum):
-		return (pageNum in range(0, len(self.pages)))	
+		return (pageNum-1 in range(0, len(self.pages)))	
 
 	# Checks whether book has a line on a particular page
 	# NOTE: pageNum and lineNum are NOT index based
@@ -182,7 +186,7 @@ class Page(object):
 	# Returns whether there is a particular line number in the page
 	# NOTE: lineNum is NOT index based
 	def hasLine(self, lineNum):
-		return (lineNum in range(0, len(self.lines)))
+		return (lineNum-1 in range(0, len(self.lines)))
 	
 
 # This is a class that represents a line on a page
@@ -379,6 +383,7 @@ class ListenThread(threading.Thread):
 	# Constructor given the socket connected to the server
 	def __init__(self,socket):
 		threading.Thread.__init__(self)
+		self.event = threading.Event()
 		self.socket = socket
 
 		# Add the client's socket to list of sockets
@@ -388,13 +393,8 @@ class ListenThread(threading.Thread):
 	# from the connected server
 	def run(self):
 
-		# Constantly listen for messages while main thread is running
-		main_thread_alive = True 
-		while main_thread_alive:
-
-			for i in threading.enumerate():
-				if i.name == "MainThread":
-					main_thread_alive = i.isAlive()
+		# Constantly listen for messages until event is set
+		while not self.event.isSet():
 				
 			# Obtain lists of ready sockets
 			read_sockets, write_sockets, error_sockets = select.select(self.listen_sockets, [], [])
@@ -497,7 +497,6 @@ BUFFER_SIZE = 1024
 
 # Prepare the socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)	# TCP
-#sock.listen(1)
 
 # Attempt to connect to server
 print "Connecting to server '%s'..." % server_name
@@ -519,87 +518,95 @@ sock.send(intro_message)
 
 # Run the reader
 commands = ['exit', 'help', 'display', 'post_to_forum', 'read_post']
-while (not reader_exit_req):
-	print ""	# formatting
+try:
+	while (not reader_exit_req):
+		print ""	# formatting
 
-	user_input = raw_input('> ')
-	user_input = user_input.split(' ')
+		user_input = raw_input('> ')
+		user_input = user_input.split(' ')
 
-	# Send an exit message to server before shutting down reader
-	if (user_input[0] == 'exit' or user_input[0] == 'q'):	
-		print "Saying goodbye to server..."
-		exit_message = "#Exit#" + user_name
-		sock.send(exit_message)
-		reader_exit_req = True
+		# Send an exit message to server before shutting down reader
+		if (user_input[0] == 'exit' or user_input[0] == 'q'):	
+			print "Saying goodbye to server..."
+			exit_message = "#Exit#" + user_name
+			sock.send(exit_message)
+			reader_exit_req = True
 
-	# Print documentation of valid commands
-	elif (user_input[0] == 'help'):
-		print "Valid commands:"	
-		print commands
+		# Print documentation of valid commands
+		elif (user_input[0] == 'help'):
+			print "Valid commands:"	
+			print commands
 
-	# Display the page of the specified book
-	elif (user_input[0] == 'display'):
-		if (len(user_input) < 3):
-			print "Usage: display [book_name] [page_number]"
-			continue
+		# Display the page of the specified book
+		elif (user_input[0] == 'display'):
+			if (len(user_input) < 3):
+				print "Usage: display [book_name] [page_number]"
+				continue
 
-		book_name = user_input[1]
-		page_num = int(user_input[2])
-		try:
-			books[book_name].displayPage(page_num)
-			currentBookname = book_name
-			currentPagenumber = page_num
+			book_name = user_input[1]
+			page_num = int(user_input[2])
+			try:
+				books[book_name].displayPage(page_num)
+				currentBookname = book_name
+				currentPagenumber = page_num
 
-		except KeyError:
-			print "Book name '%s' invalid" % book_name
-			continue
+			except KeyError:
+				print "Book name '%s' invalid" % book_name
+				continue
 
-	# Send a new post to the server
-	elif (user_input[0] == 'post_to_forum'):
-		if (len(user_input) < 3):
-			print "Usage: post_to_forum [line number] [post content]"
-			continue
+		# Send a new post to the server
+		elif (user_input[0] == 'post_to_forum'):
+			if (len(user_input) < 3):
+				print "Usage: post_to_forum [line number] [post content]"
+				continue
 
-		# Check if book has line
-		postLine = int(user_input[1])
-		if (not books[currentBookname].hasLine(postLine)):
-			print "Line %d does not exist on page %d in book '%s'" \
-				% (postLine, currentPagenumber, currentBookname)
-			continue
+			# Check if book has line
+			postLine = int(user_input[1])
+			if (not books[currentBookname].hasLine(postLine)):
+				print "Line %d does not exist on page %d in book '%s'" \
+					% (postLine, currentPagenumber, currentBookname)
+				continue
 		
-		# Construct the post content string
-		postContent = ''.join(user_input[3:])	
+			# Construct the post content string
+			postContent = ''.join(user_input[3:])	
 
-		# Create the two strings for the post:
-		# postInfoString: 	'#NewPostInfo#SenderName#BookName#PageNumber#LineNumber'
-		# postContentString: 	'#NewPostContent#Content'
-		# NOTE: By default, the read status of a post composed by this client
-		#       is 'READ'
-		postInfoStr = "#NewPostInfo#" + user_name + "#" + currentBookname + "#" \
-				+ str(postLine)
-		postContentStr = "#NewPostContent#" + postContent
+			# Create the two strings for the post:
+			# postInfoString: 	'#NewPostInfo#SenderName#BookName#PageNumber#LineNumber'
+			# postContentString: 	'#NewPostContent#Content'
+			# NOTE: By default, the read status of a post composed by this client
+			#       is 'READ'
+			postInfoStr = "#NewPostInfo#" + user_name + "#" + currentBookname + "#" \
+					+ str(postLine)
+			postContentStr = "#NewPostContent#" + postContent
 
-		print "Strings to send to server:"
-		print postInfoStr
-		print postContentStr
+			print "Strings to send to server:"
+			print postInfoStr
+			print postContentStr
 
-	# Display the posts for a particular line number on the current book and page
-	elif (user_input[0] == 'read_post'):
-		if (len(user_input) < 2):
-			print "Usage: read_post [line number]"
-			continue
-		postsLine = int(user_input[1])
+		# Display the posts for a particular line number on the current book and page
+		elif (user_input[0] == 'read_post'):
+			if (len(user_input) < 2):
+				print "Usage: read_post [line number]"
+				continue
+			postsLine = int(user_input[1])
 		
-		# Check if currentBookname is initialised
-		if (currentBookname == ""):
-			print "Uncertain book and page. Use the command 'display' to initialise."
-			continue
-		books[currentBookname].displayPosts(currentPagenumber, postsLine)
+			# Check if currentBookname is initialised
+			if (currentBookname == ""):
+				print "Uncertain book and page. Use the command 'display' to initialise."
+				continue
+			books[currentBookname].displayPosts(currentPagenumber, postsLine)
 		
+		# Unknown command
+		else:
+			print "Unrecognised command:", user_input[0]
 
-	# Unknown command
-	else:
-		print "Unrecognised command:", user_input[0]
+	# close the connection
+	print "Shutting down reader..."
+	listenThread.event.set()
+	print "Exiting..."
 
-# close the connection
-print "Shutting down reader..."
+except KeyboardInterrupt:
+	print "Closing threads..."
+	listenThread.event.set()
+	listenThread.join()
+	print "Exiting..."
