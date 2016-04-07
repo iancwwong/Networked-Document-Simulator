@@ -452,6 +452,7 @@ intro_message = "#Intro#" + user_name + "#" + opmode + "#" + str(poll_interval)
 sock.send(intro_message)
 
 # Run the reader
+commands = ['exit', 'help', 'display', 'read_post']
 reader_exit_req = False
 while (not reader_exit_req):
 	
@@ -465,6 +466,11 @@ while (not reader_exit_req):
 		exit_message = "#Exit#" + user_name
 		sock.send(exit_message)
 		reader_exit_req = True
+
+	# Print documentation of valid commands
+	if (user_input[0] == 'help'):
+		print "Valid commands:"	
+		print commands
 
 	# Display the page of the specified book
 	elif (user_input[0] == 'display'):
