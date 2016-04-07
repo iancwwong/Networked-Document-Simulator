@@ -3,6 +3,7 @@
 import time
 import socket
 import select
+import threading
 from sys import argv
 import sys
 import os
@@ -37,10 +38,11 @@ class Book(object):
 	# Return the string in a particular page with message indication
 	# Note: Assumes pageNum starts at 1 (NOT index based)
 	def displayPage(self,pageNum):
-		try:
-			print self.pages[pageNum-1].showPage()
-		except IndexError:
-			print "No such page exists"
+		if (not self.hasPage(pageNum)):
+			print "Page %d does not exist." % (pageNum)
+			return
+		print "%s Page %d:" % (self.bookname, pageNum)
+		self.pages[pageNum-1].showPage()
 
 	# Link up the book with a database for queries about post statuses
 	def linkDB(self, dbObj):
@@ -91,8 +93,6 @@ class Book(object):
 
 			# Set the post to be read in the database
 			self.db.setRead(postID)
-		
-		print ""	# formatting
 
 		# Set the posts on the line to be 'read'
 		self.setPostRead(pageNum, lineNum)		
@@ -112,6 +112,11 @@ class Book(object):
 			self.pages[pageNum-1].setPostUnread(lineNum)
 		except IndexError:
 			print "No such page exists"
+
+	# Checks whether the page exists
+	# NOTE: pageNum is NOT index based
+	def hasPage(self, pageNum):
+		return (pageNum in range(0, len(self.pages)))		
 
 # This class represents a page
 # Note: a page has directory '[bookname]/[bookname]_page[pagenumber]'
@@ -138,8 +143,7 @@ class Page(object):
 	def showPage(self):
 		pageStr = ""
 		for line in self.lines:
-			pageStr = pageStr + line.showLine() + "\n"
-		return pageStr	
+			line.showLine()
 
 	# Return the contents of a line
 	# NOTE: lineNum is NOT index based
@@ -165,11 +169,7 @@ class Page(object):
 	# Returns whether there is a particular line number in the page
 	# NOTE: lineNum is NOT index based
 	def hasLine(self, lineNum):
-		linenum = lineNum-1
-		if (linenum >= 0 and linenum < len(self.lines)):
-			return True
-		else: 
-			return False
+		return (lineNum in range(0, len(self.lines)))
 	
 
 # This is a class that represents a line on a page
@@ -202,7 +202,7 @@ class Line(object):
 	# Show the contents of the page with message indication on each line
 	# with format: post status, 2 spaces, line number, 1 space, line content		
 	def showLine(self):
-		return (self.post_chars[self.poststatus] + '  ' + str(self.linenum) + ' ' + self.linecontent)
+		print (self.post_chars[self.poststatus] + '  ' + str(self.linenum) + ' ' + self.linecontent)
 
 	# Get the contents of the line
 	def getLineContent(self):
@@ -360,8 +360,36 @@ class ReaderDB(object):
 					+ str(readstatus) + "\n"
 				postcontent = postContent[postID]
 				dbStr = dbStr + "#PostContent#" + str(postID) + "#" + postcontent + "\n"
-		return dbStr	
+		return dbStr
 
+# This class is the thread that runs when reader is listening for input from server
+class ListenThread(threading.Thread):
+
+	# Constructor given the socket connected to the server
+	def __init__(self,socket):
+		threading.Thread.__init__(self)
+		self.socket = socket
+
+		# Add the client's socket to list of sockets
+		self.listen_sockets = [self.socket]
+
+	# Execute thread - constantly listen for messages
+	# from the connected server
+	def run(self):
+
+		# Examine the global flag 
+		while not reader_exit_req:
+				
+			# Obtain lists of ready sockets
+			read_sockets, write_sockets, error_sockets = select.select(self.listen_sockets, [], [])
+
+			# Read any incoming data from the server	
+			for rs in read_sockets:
+				if rs == self.socket:
+					data = rs.recv(BUFFER_SIZE)
+					if data != "":
+						print "Data received: ", data
+		sock.close()
 # ----------------------------------------------------
 # MAIN
 # ----------------------------------------------------
@@ -409,6 +437,12 @@ script, opmode, poll_interval_str, user_name, server_name, server_port_str = arg
 server_port = int(server_port_str)
 poll_interval = int(poll_interval_str)
 
+# Initialise global variables
+currentBookname = ""
+currentPagenum = 0
+currentLinenum = 0
+reader_exit_req = False
+
 # DEBUGGING
 print "Username: \t", user_name
 print "Connecting to: \t", server_name
@@ -439,11 +473,6 @@ for book in booklist:
 	# Link the book with the database
 	books[book_dir].linkDB(readerDB)
 
-# Initialise global currentBookname, currentPagenum, and currentLinenum
-currentBookname = ""
-currentPagenum = 0
-currentLinenum = 0
-
 # DEBUGGING
 runDBTests()
 
@@ -463,73 +492,65 @@ except socket.error, e:
 	exit()
 print "Successfully connected to server!"
 
+# Start the listening thread
+print "Starting listening thread..."
+listenThread = ListenThread(sock)
+listenThread.start()
+
 # Send intro message with info about this client
 intro_message = "#Intro#" + user_name + "#" + opmode + "#" + str(poll_interval)
 sock.send(intro_message)
 
 # Run the reader
 commands = ['exit', 'help', 'display', 'read_post']
-listen_sockets = [sock, sys.stdin]
-reader_exit_req = False
 while (not reader_exit_req):
+	print ""	# formatting
 
-	# Obtain lists of sockets that are listenable
-	read_sockets, write_sockets, error_sockets = select.select(listen_sockets, [], [])
-	
-	# Examine only read_sockets
-	for rs in read_sockets:
+	user_input = raw_input('> ')
+	user_input = user_input.split(' ')
 
-		# Read from socket - server is sending information
-		if (rs == sock):
-			data = rs.recv(BUFFER_SIZE)
-			print "Data received:", data
+	# Send an exit message to server before shutting down reader
+	if (user_input[0] == 'exit' or user_input[0] == 'q'):	
+		print "Saying goodbye to server..."
+		exit_message = "#Exit#" + user_name
+		sock.send(exit_message)
+		reader_exit_req = True
 
-		# Read and parse user input
-		elif (rs == sys.stdin):
-			user_input = sys.stdin.readline().rstrip()
-			user_input = user_input.split(' ')
+	# Print documentation of valid commands
+	elif (user_input[0] == 'help'):
+		print "Valid commands:"	
+		print commands
 
-			# Send an exit message to server before shutting down reader
-			if (user_input[0] == 'exit' or user_input[0] == 'q'):	
-				print "Saying goodbye to server..."
-				exit_message = "#Exit#" + user_name
-				sock.send(exit_message)
-				reader_exit_req = True
+	# Display the page of the specified book
+	elif (user_input[0] == 'display'):
+		if (len(user_input) < 3):
+			print "Usage: display [book_name] [page_number]"
+			continue
 
-			# Print documentation of valid commands
-			elif (user_input[0] == 'help'):
-				print "Valid commands:"	
-				print commands
+		book_name = user_input[1]
+		page_num = int(user_input[2])
+		try:
+			books[book_name].displayPage(page_num)
+			currentBookname = book_name
+			currentPagenumber = page_num
 
-			# Display the page of the specified book
-			elif (user_input[0] == 'display'):
-				if (len(user_input) < 3):
-					print "Usage: display [book_name] [page_number]"
-					continue
-		
-				book_name = user_input[1]
-				page_num = int(user_input[2])
-				try:
-					books[book_name].displayPage(page_num)
-					currentBookname = book_name
-					currentPagenumber = page_num
+		except KeyError:
+			print "Book name '%s' invalid" % book_name
+			continue
 
-				except KeyError:
-					print "Book name '%s' invalid" % book_name
-					continue
+	# Display the posts for a particular line number on the current book and page
+	elif (user_input[0] == 'read_post'):
+		if (len(user_input) < 2):
+			print "Usage: read_post [line number]"
+			continue
 
-			# Display the posts for a particular line number on the current book and page
-			elif (user_input[0] == 'read_post'):
-				if (len(user_input) < 2):
-					print "Usage: read_post [line number]"
-					continue
-		
-				postsLine = int(user_input[1])
-				books[currentBookname].displayPosts(currentPagenumber, postsLine)
+		postsLine = int(user_input[1])
+		books[currentBookname].displayPosts(currentPagenumber, postsLine)
 
-			else:
-				print "Unrecognised command:", user_input[0]
+	# Unknown command
+	else:
+		print "Unrecognised command:", user_input[0]
 
 # close the connection
 print "Shutting down reader..."
-sock.close()
+time.sleep(1)

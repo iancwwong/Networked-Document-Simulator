@@ -108,7 +108,7 @@ class ClientThread(threading.Thread):
 						client_opmode = msg_components[3]
 						self.client.user_name = client_user_name
 						self.client.opmode = client_opmode
-						rsock.send("Hello!")			
+						#rsock.send("Hello!")			
 
 					elif (msg_components[1] == "Exit"):
 						# Exit message received - cut connection with client
