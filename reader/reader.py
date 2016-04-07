@@ -74,8 +74,9 @@ class Book(object):
 		posts = self.db.getPosts(self.bookname, pageNum, lineNum)
 		
 		# Display the retrieved posts to the user
-		print "From book by %s, Page %d, Line number %d" % (self.author, pageNum, lineNum)
-		print "Displaying posts for the line: %s" % (self.pages[pageNum-1].getLineContent(lineNum))
+		print "From book by %s, Page %d, Line number %d:" % (self.author, pageNum, lineNum)	
+		print '"%s"' % self.pages[pageNum-1].getLineContent(lineNum)
+		print "Displaying posts:"
 		for post in posts:
 			postID, senderName, postcontent, readStatus = post
 		
@@ -85,11 +86,12 @@ class Book(object):
 				printStr = printStr + "[UNREAD]"
 			printStr = printStr + "\t" + str(postID) + " " + senderName + ": " + postcontent
 			print printStr
-			print "\n"
 
 			# Set the post to be read in the database
 			self.db.setRead(postID)
 		
+		print ""	# formatting
+
 		# Set the posts on the line to be 'read'
 		self.setPostRead(pageNum, lineNum)		
 
@@ -270,6 +272,7 @@ class ReaderDB(object):
 				# Add post status to list
 				sender, bookname, pagenumber, linenumber, readstatus = postInfo[postID]
 				statusList.append((readstatus, pagenumber, linenumber))
+				
 
 			return statusList
 
@@ -383,6 +386,8 @@ def runDBTests():
 	print "Updating the book..."
 	books['shelley'].update()
 	books['shelley'].displayPage(2)
+	books['exupery'].update()
+	books['joyce'].update()
 
 #Usage: python reader.py mode polling_interval user_name server_name server_port_number
 
@@ -461,14 +466,14 @@ while (not reader_exit_req):
 	user_input = user_input.split(' ')
 
 	# Send an exit message to server before shutting down reader
-	if (user_input[0] == 'exit'):	
+	if (user_input[0] == 'exit' or user_input[0] == 'q'):	
 		print "Saying goodbye to server..."
 		exit_message = "#Exit#" + user_name
 		sock.send(exit_message)
 		reader_exit_req = True
 
 	# Print documentation of valid commands
-	if (user_input[0] == 'help'):
+	elif (user_input[0] == 'help'):
 		print "Valid commands:"	
 		print commands
 
