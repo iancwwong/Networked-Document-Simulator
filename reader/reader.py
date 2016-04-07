@@ -60,6 +60,39 @@ class Book(object):
 			elif (status == self.READ_POST):
 				self.setPostRead(pagenum, linenum)
 
+	# Display the posts for a particular page and line
+	# Involves querying the linked database
+	# NOTE: The given pageNum and lineNum are NOT index based
+	def displayPosts(self, pageNum, lineNum):
+
+		# Check that the lineNum is valid
+		if (not self.pages[pageNum-1].hasLine(lineNum)):
+			print "Error: page number %d not found." % pageNum
+
+		# Obtain the list of posts for the particular page and line
+		# Format: [ (postID, senderName, content, read/unread) ]
+		posts = self.db.getPosts(self.bookname, pageNum, lineNum)
+		
+		# Display the retrieved posts to the user
+		print "From book by %s, Page %d, Line number %d" % (self.author, pageNum, lineNum)
+		print "Displaying posts for the line: %s" % (self.pages[pageNum-1].getLineContent(lineNum))
+		for post in posts:
+			postID, senderName, postcontent, readStatus = post
+		
+			# Construct the string to be printed, containing the post
+			printStr = ""
+			if (readStatus == self.UNREAD_POST):
+				printStr = printStr + "[UNREAD]"
+			printStr = printStr + "\t" + str(postID) + " " + senderName + ": " + postcontent
+			print printStr
+			print "\n"
+
+			# Set the post to be read in the database
+			self.db.setRead(postID)
+		
+		# Set the posts on the line to be 'read'
+		self.setPostRead(pageNum, lineNum)		
+
 	# Set a post to be read at a particular line in a particular page
 	# NOTE: Page and Line are NOT index based as arguments
 	def setPostRead(self, pageNum, lineNum):
@@ -104,6 +137,11 @@ class Page(object):
 			pageStr = pageStr + line.showLine() + "\n"
 		return pageStr	
 
+	# Return the contents of a line
+	# NOTE: lineNum is NOT index based
+	def getLineContent(self, lineNum):
+		return self.lines[lineNum-1].getLineContent()
+
 	# Set a post to be read at a particular line
 	# NOTE: lineNum is NOT index based
 	def setPostRead(self, lineNum):
@@ -119,6 +157,15 @@ class Page(object):
 			self.lines[lineNum-1].setPostUnread()
 		except IndexError:
 			print "No such page exists"
+
+	# Returns whether there is a particular line number in the page
+	# NOTE: lineNum is NOT index based
+	def hasLine(self, lineNum):
+		linenum = lineNum-1
+		if (linenum >= 0 and linenum < len(self.lines)):
+			return True
+		else: 
+			return False
 	
 
 # This is a class that represents a line on a page
@@ -153,6 +200,10 @@ class Line(object):
 	def showLine(self):
 		return (self.post_chars[self.poststatus] + '  ' + str(self.linenum) + ' ' + self.linecontent)
 
+	# Get the contents of the line
+	def getLineContent(self):
+		return self.linecontent
+		
 	# Set the status of forum posts on this line as 'Read'
 	def setPostRead(self):
 		self.poststatus = self.READ_POST
@@ -184,6 +235,7 @@ class ReaderDB(object):
 
 	# Insert a new post, given a ForumPostObj
 	# NOTE: Assumes the ForumPostObj is complete (ie contains ALL information)
+	# NOTE: Each postID corresponds to exactly 1 postInfo and postContent entry
 	def insertPost(self, forumPost):
 		try:
 			# Check whether there are tuples in the db for the book
@@ -223,6 +275,47 @@ class ReaderDB(object):
 
 		except KeyError:
 			print "Error: Book %s does not exist in database" % (bookname)
+
+	# Return a list of posts for a particular book, page, and line
+	# Format: [ (postID, senderName, postcontent, read/unread) ]
+	def getPosts(self, bookName, pageNum, lineNum):
+
+		# Loop through all posts in the given book, filtering only those
+		# with the given page and line number
+		postList = []
+		
+		# Check whether there are any posts for the book, page, and line
+		try:
+			if (bool(self.db[bookName] == False)):
+				return []
+			postInfo, postContent = self.db[bookName]
+			for postID in postInfo.keys():
+				sendername, bookname, pagenumber, linenumber, readstatus = postInfo[postID]
+				postcontent = postContent[postID]
+				if (bookname == bookName and pagenumber == pageNum and linenumber == lineNum):
+					postList.append((postID, sendername, postcontent, readstatus))
+
+			return postList
+				
+
+		except KeyError:
+			print "Error: book name %s not found." % bookName
+
+	# Set a post read status to be 'Read'
+	# NOTE: Assumes postID's are unique
+	def setRead(self, readPostID):
+		# Find the post with the given postID
+		for bookName in self.db.keys():
+			# Check whether it's empty
+			if (bool(self.db[bookName]) == False):
+				return
+			postInfo, postContent = self.db[bookName]
+			
+			# Check whether there is a post with the given id
+			if readPostID in postInfo.keys():
+				sendername, bookname, pagenumber, linenumber, readstatus = postInfo[readPostID]
+				postInfo[readPostID] = (sendername, bookname, pagenumber, linenumber, self.READ)
+				return	
 		
 
 # This class represents a forum post
@@ -297,8 +390,9 @@ def runDBTests():
 if (len(argv) < 6):
 	print "Usage: python reader.py [mode] [poll interval] [user_name] [server_name] [server_port_number]"
 	exit()
-script, opmode, poll_interval, user_name, server_name, server_port_str = argv
+script, opmode, poll_interval_str, user_name, server_name, server_port_str = argv
 server_port = int(server_port_str)
+poll_interval = int(poll_interval_str)
 
 # DEBUGGING
 print "Username: \t", user_name
@@ -330,9 +424,13 @@ for book in booklist:
 	# Link the book with the database
 	books[book_dir].linkDB(readerDB)
 
+# Initialise global currentBookname, currentPagenum, and currentLinenum
+currentBookname = ""
+currentPagenum = 0
+currentLinenum = 0
+
 # DEBUGGING
 runDBTests()
-exit()
 
 # Prepare the buffer size
 BUFFER_SIZE = 1024
@@ -350,7 +448,7 @@ except socket.error, e:
 print "Successfully connected to server!"
 
 # Send intro message with info about this client
-intro_message = "#Intro#" + user_name + "#" + opmode
+intro_message = "#Intro#" + user_name + "#" + opmode + "#" + str(poll_interval)
 sock.send(intro_message)
 
 # Run the reader
@@ -361,26 +459,38 @@ while (not reader_exit_req):
 	user_input = raw_input('> ')
 	user_input = user_input.split(' ')
 
+	# Send an exit message to server before shutting down reader
 	if (user_input[0] == 'exit'):	
-		# Send an exit message to server before shutting down reader
-		print "Saying goodbye to server"
+		print "Saying goodbye to server..."
 		exit_message = "#Exit#" + user_name
 		sock.send(exit_message)
 		reader_exit_req = True
 
+	# Display the page of the specified book
 	elif (user_input[0] == 'display'):
 		if (len(user_input) < 3):
 			print "Usage: display [book_name] [page_number]"
 			continue
 		
-		# Display the page of the specified book
 		book_name = user_input[1]
 		page_num = int(user_input[2])
 		try:
 			books[book_name].displayPage(page_num)
+			currentBookname = book_name
+			currentPagenumber = page_num
+
 		except KeyError:
 			print "Book name '%s' invalid" % book_name
-			continue	
+			continue
+
+	# Display the posts for a particular line number on the current book and page
+	elif (user_input[0] == 'read_post'):
+		if (len(user_input) < 2):
+			print "Usage: read_post [line number]"
+			continue
+		
+		postsLine = int(user_input[1])
+		books[currentBookname].displayPosts(currentPagenumber, postsLine)
 
 	else:
 		print "Unrecognised command:", user_input[0]
