@@ -1,6 +1,5 @@
 # This is the reader component of the e-book/server system
 
-import time
 import socket
 import select
 import threading
@@ -68,34 +67,38 @@ class Book(object):
 	# Involves querying the linked database
 	# NOTE: The given pageNum and lineNum are NOT index based
 	def displayPosts(self, pageNum, lineNum):
+	
+		try:
+			# Check that the lineNum is valid
+			if (not self.pages[pageNum-1].hasLine(lineNum)):
+				print "Error: line number %d not found." % pageNum
 
-		# Check that the lineNum is valid
-		if (not self.pages[pageNum-1].hasLine(lineNum)):
-			print "Error: page number %d not found." % pageNum
-
-		# Obtain the list of posts for the particular page and line
-		# Format: [ (postID, senderName, content, read/unread) ]
-		posts = self.db.getPosts(self.bookname, pageNum, lineNum)
+			# Obtain the list of posts for the particular page and line
+			# Format: [ (postID, senderName, content, read/unread) ]
+			posts = self.db.getPosts(self.bookname, pageNum, lineNum)
 		
-		# Display the retrieved posts to the user
-		print "From book by %s, Page %d, Line number %d:" % (self.author, pageNum, lineNum)	
-		print '"%s"' % self.pages[pageNum-1].getLineContent(lineNum)
-		print "Displaying posts:"
-		for post in posts:
-			postID, senderName, postcontent, readStatus = post
+			# Display the retrieved posts to the user
+			print "From book by %s, Page %d, Line number %d:" % (self.author, pageNum, lineNum)	
+			print '"%s"' % self.pages[pageNum-1].getLineContent(lineNum)
+			print "Displaying posts:"
+			for post in posts:
+				postID, senderName, postcontent, readStatus = post
 		
-			# Construct the string to be printed, containing the post
-			printStr = ""
-			if (readStatus == self.UNREAD_POST):
-				printStr = printStr + "[UNREAD]"
-			printStr = printStr + "\t" + str(postID) + " " + senderName + ": " + postcontent
-			print printStr
+				# Construct the string to be printed, containing the post
+				printStr = ""
+				if (readStatus == self.UNREAD_POST):
+					printStr = printStr + "[UNREAD]"
+				printStr = printStr + "\t" + str(postID) + " " + senderName + ": " + postcontent
+				print printStr
 
-			# Set the post to be read in the database
-			self.db.setRead(postID)
+				# Set the post to be read in the database
+				self.db.setRead(postID)
 
-		# Set the posts on the line to be 'read'
-		self.setPostRead(pageNum, lineNum)		
+			# Set the posts on the line to be 'read'
+			self.setPostRead(pageNum, lineNum)
+
+		except KeyError:
+			print "Error: Page not found"		
 
 	# Set a post to be read at a particular line in a particular page
 	# NOTE: Page and Line are NOT index based as arguments
@@ -116,7 +119,17 @@ class Book(object):
 	# Checks whether the page exists
 	# NOTE: pageNum is NOT index based
 	def hasPage(self, pageNum):
-		return (pageNum in range(0, len(self.pages)))		
+		return (pageNum in range(0, len(self.pages)))	
+
+	# Checks whether book has a line on a particular page
+	# NOTE: pageNum and lineNum are NOT index based
+	def hasLine(self, pageNum, lineNum):
+		try:
+			return self.pages[pageNum-1].hasLine(lineNum)
+		except IndexError:
+			print "No such page exists"
+		
+			
 
 # This class represents a page
 # Note: a page has directory '[bookname]/[bookname]_page[pagenumber]'
@@ -260,8 +273,8 @@ class ReaderDB(object):
 		bookname = postInfoComponents[4]
 		pagenumber = int(postInfoComponents[5])
 		linenumber = int(postInfoComponents[6])
-		readstatus = int(postInfoComponents[7])
-		postcontent = postContentComponents[3]
+		readstatus = int(postInfoComponents[7])		# ToFix: This should NOT be here. It should be, by default, 'UNREAD'
+		postcontent = postContentComponents[3]		# ToFix: If content string has a '#', this will be wrong
 
 		try:
 			# Check whether there are tuples in the db for the book
@@ -295,7 +308,6 @@ class ReaderDB(object):
 				sender, bookname, pagenumber, linenumber, readstatus = postInfo[postID]
 				statusList.append((readstatus, pagenumber, linenumber))
 				
-
 			return statusList
 
 		except KeyError:
@@ -320,8 +332,7 @@ class ReaderDB(object):
 				if (bookname == bookName and pagenumber == pageNum and linenumber == lineNum):
 					postList.append((postID, sendername, postcontent, readstatus))
 
-			return postList
-				
+			return postList			
 
 		except KeyError:
 			print "Error: book name %s not found." % bookName
@@ -377,8 +388,13 @@ class ListenThread(threading.Thread):
 	# from the connected server
 	def run(self):
 
-		# Examine the global flag 
-		while not reader_exit_req:
+		# Constantly listen for messages while main thread is running
+		main_thread_alive = True 
+		while main_thread_alive:
+
+			for i in threading.enumerate():
+				if i.name == "MainThread":
+					main_thread_alive = i.isAlive()
 				
 			# Obtain lists of ready sockets
 			read_sockets, write_sockets, error_sockets = select.select(self.listen_sockets, [], [])
@@ -502,7 +518,7 @@ intro_message = "#Intro#" + user_name + "#" + opmode + "#" + str(poll_interval)
 sock.send(intro_message)
 
 # Run the reader
-commands = ['exit', 'help', 'display', 'read_post']
+commands = ['exit', 'help', 'display', 'post_to_forum', 'read_post']
 while (not reader_exit_req):
 	print ""	# formatting
 
@@ -538,14 +554,48 @@ while (not reader_exit_req):
 			print "Book name '%s' invalid" % book_name
 			continue
 
+	# Send a new post to the server
+	elif (user_input[0] == 'post_to_forum'):
+		if (len(user_input) < 3):
+			print "Usage: post_to_forum [line number] [post content]"
+			continue
+
+		# Check if book has line
+		postLine = int(user_input[1])
+		if (not books[currentBookname].hasLine(postLine)):
+			print "Line %d does not exist on page %d in book '%s'" \
+				% (postLine, currentPagenumber, currentBookname)
+			continue
+		
+		# Construct the post content string
+		postContent = ''.join(user_input[3:])	
+
+		# Create the two strings for the post:
+		# postInfoString: 	'#NewPostInfo#SenderName#BookName#PageNumber#LineNumber'
+		# postContentString: 	'#NewPostContent#Content'
+		# NOTE: By default, the read status of a post composed by this client
+		#       is 'READ'
+		postInfoStr = "#NewPostInfo#" + user_name + "#" + currentBookname + "#" \
+				+ str(postLine)
+		postContentStr = "#NewPostContent#" + postContent
+
+		print "Strings to send to server:"
+		print postInfoStr
+		print postContentStr
+
 	# Display the posts for a particular line number on the current book and page
 	elif (user_input[0] == 'read_post'):
 		if (len(user_input) < 2):
 			print "Usage: read_post [line number]"
 			continue
-
 		postsLine = int(user_input[1])
+		
+		# Check if currentBookname is initialised
+		if (currentBookname == ""):
+			print "Uncertain book and page. Use the command 'display' to initialise."
+			continue
 		books[currentBookname].displayPosts(currentPagenumber, postsLine)
+		
 
 	# Unknown command
 	else:
@@ -553,4 +603,3 @@ while (not reader_exit_req):
 
 # close the connection
 print "Shutting down reader..."
-time.sleep(1)
