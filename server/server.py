@@ -107,7 +107,8 @@ class ClientThread(threading.Thread):
 						client_user_name = msg_components[2]
 						client_opmode = msg_components[3]
 						self.client.user_name = client_user_name
-						self.client.opmode = client_opmode			
+						self.client.opmode = client_opmode
+						rsock.send("Hello!")			
 
 					elif (msg_components[1] == "Exit"):
 						# Exit message received - cut connection with client
@@ -117,7 +118,7 @@ class ClientThread(threading.Thread):
 					elif (msg_components[1] == "Debug"):
 						# Debugging message received:
 						reply_msg = \
-							"Debug message received. Parameters:" + msg_components[2]
+						"Debug message received. Parameters:" + msg_components[2]
 						rsock.send(reply_msg)		
 
 					else:

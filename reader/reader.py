@@ -2,6 +2,7 @@
 
 import time
 import socket
+import select
 from sys import argv
 import sys
 import os
@@ -451,6 +452,7 @@ BUFFER_SIZE = 1024
 
 # Prepare the socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)	# TCP
+#sock.listen(1)
 
 # Attempt to connect to server
 print "Connecting to server '%s'..." % server_name
@@ -467,53 +469,66 @@ sock.send(intro_message)
 
 # Run the reader
 commands = ['exit', 'help', 'display', 'read_post']
+listen_sockets = [sock, sys.stdin]
 reader_exit_req = False
 while (not reader_exit_req):
+
+	# Obtain lists of sockets that are listenable
+	read_sockets, write_sockets, error_sockets = select.select(listen_sockets, [], [])
 	
-	# Read and parse the user input
-	user_input = raw_input('> ')
-	user_input = user_input.split(' ')
+	# Examine only read_sockets
+	for rs in read_sockets:
 
-	# Send an exit message to server before shutting down reader
-	if (user_input[0] == 'exit' or user_input[0] == 'q'):	
-		print "Saying goodbye to server..."
-		exit_message = "#Exit#" + user_name
-		sock.send(exit_message)
-		reader_exit_req = True
+		# Read from socket - server is sending information
+		if (rs == sock):
+			data = rs.recv(BUFFER_SIZE)
+			print "Data received:", data
 
-	# Print documentation of valid commands
-	elif (user_input[0] == 'help'):
-		print "Valid commands:"	
-		print commands
+		# Read and parse user input
+		elif (rs == sys.stdin):
+			user_input = sys.stdin.readline().rstrip()
+			user_input = user_input.split(' ')
 
-	# Display the page of the specified book
-	elif (user_input[0] == 'display'):
-		if (len(user_input) < 3):
-			print "Usage: display [book_name] [page_number]"
-			continue
+			# Send an exit message to server before shutting down reader
+			if (user_input[0] == 'exit' or user_input[0] == 'q'):	
+				print "Saying goodbye to server..."
+				exit_message = "#Exit#" + user_name
+				sock.send(exit_message)
+				reader_exit_req = True
+
+			# Print documentation of valid commands
+			elif (user_input[0] == 'help'):
+				print "Valid commands:"	
+				print commands
+
+			# Display the page of the specified book
+			elif (user_input[0] == 'display'):
+				if (len(user_input) < 3):
+					print "Usage: display [book_name] [page_number]"
+					continue
 		
-		book_name = user_input[1]
-		page_num = int(user_input[2])
-		try:
-			books[book_name].displayPage(page_num)
-			currentBookname = book_name
-			currentPagenumber = page_num
+				book_name = user_input[1]
+				page_num = int(user_input[2])
+				try:
+					books[book_name].displayPage(page_num)
+					currentBookname = book_name
+					currentPagenumber = page_num
 
-		except KeyError:
-			print "Book name '%s' invalid" % book_name
-			continue
+				except KeyError:
+					print "Book name '%s' invalid" % book_name
+					continue
 
-	# Display the posts for a particular line number on the current book and page
-	elif (user_input[0] == 'read_post'):
-		if (len(user_input) < 2):
-			print "Usage: read_post [line number]"
-			continue
+			# Display the posts for a particular line number on the current book and page
+			elif (user_input[0] == 'read_post'):
+				if (len(user_input) < 2):
+					print "Usage: read_post [line number]"
+					continue
 		
-		postsLine = int(user_input[1])
-		books[currentBookname].displayPosts(currentPagenumber, postsLine)
+				postsLine = int(user_input[1])
+				books[currentBookname].displayPosts(currentPagenumber, postsLine)
 
-	else:
-		print "Unrecognised command:", user_input[0]
+			else:
+				print "Unrecognised command:", user_input[0]
 
 # close the connection
 print "Shutting down reader..."
