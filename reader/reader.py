@@ -3,6 +3,7 @@
 import time
 import socket
 from sys import argv
+import sys
 import os
 import os.path
 
@@ -319,9 +320,41 @@ class ReaderDB(object):
 				sendername, bookname, pagenumber, linenumber, readstatus = postInfo[readPostID]
 				postInfo[readPostID] = (sendername, bookname, pagenumber, linenumber, self.READ)
 				return	
-		
+
+	# Show all contents in db
+	def show(self):
+		# Loop through all books and posts
+		for bookName in self.db.keys():
+			print "Bookname:", bookName
+			if (bool(self.db[bookName]) == False):
+				return
+			postInfo, postContent = self.db[bookName]
+			for postID in postInfo.keys():
+				print postInfo[postID]
+				print postContent[postID]
+
+	# Export db as a string
+	# NOTE: essentially same format as ForumPostObj
+	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber#Read/Unread'
+	# postContentString: 	'#PostContent#Id#Content'
+	def exportAsStr(self):
+		# Loop through all books and posts
+		dbStr = ""
+		for bookName in self.db.keys():
+			if (bool(self.db[bookName]) == False):
+				continue
+			postInfo, postContent = self.db[bookName]	
+			for postID in postInfo.keys():
+				sendername, bookname, pagenumber, linenumber, readstatus = postInfo[postID]
+				dbStr = dbStr + "#PostInfo#" + str(postID) + "#" + sendername + "#" \
+					+ bookname + "#" + str(pagenumber) + "#" + str(linenumber) + "#" \
+					+ str(readstatus) + "\n"
+				postcontent = postContent[postID]
+				dbStr = dbStr + "#PostContent#" + str(postID) + "#" + postcontent + "\n"
+		return dbStr	
 
 # This class represents a forum post
+# NOTE: This could be redundant
 class ForumPostObj(object):
 	
 	# Constants
@@ -382,12 +415,15 @@ def runDBTests():
 	readerDB.insertPost(forumPostObj)
 
 	# Update the books
-	books['shelley'].displayPage(2)
+	#books['shelley'].displayPage(2)
 	print "Updating the book..."
 	books['shelley'].update()
-	books['shelley'].displayPage(2)
+	#books['shelley'].displayPage(2)
 	books['exupery'].update()
 	books['joyce'].update()
+	
+	print "Database:"
+	print readerDB.exportAsStr()
 
 #Usage: python reader.py mode polling_interval user_name server_name server_port_number
 
