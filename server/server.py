@@ -35,10 +35,6 @@ class ServerDB(object):
 
 	# Constructor
 	def __init__(self):
-		# Create the 3 files that store information about a forum post
-		self.post_info = open("post_info",'w')
-		self.post_content = open("post_content",'w')
-		self.post_users = open("post_users",'w')
 		
 		# Maintain a list of serial numbers / post ID's
 		self.post_ids = []
