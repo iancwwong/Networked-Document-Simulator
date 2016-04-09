@@ -41,15 +41,16 @@ class ServerDB(object):
 	MIN_ID_VAL = 1000
 	MAX_ID_VAL = 9999
 
-	postsDB = {}
+	# Format of database:
+	# db = {
+	# 	"postID" : (postInfo, postContent)
+	# }
+	# postInfo = (sender, bookname, page, line)
+	# postConent = postContent
+	db = {}
 
 	# Constructor
 	def __init__(self):
-
-		# Initialise the dicts
-		for book in booklist:
-			bookname, bookauthor = book
-			self.postsDB[bookname] = {}
 		
 		# Maintain a list of serial numbers / post ID's
 		self.post_ids = []
@@ -66,33 +67,23 @@ class ServerDB(object):
 		postContentString = postContentString.split('#')
 		sendername = postInfoString[2]
 		bookname = postInfoString[3]
-		pagenum = postInfoString[4]
-		linenum = postInfoString[5]
+		pagenum = int(postInfoString[4])
+		linenum = int(postInfoString[5])
 		postcontent = postContentString[2]
 
+		# Generate an id for the post
+		new_post_id = self.generatePostID()
+		
+		# Prepare the tuples to insert
+		postInfo = (sendername, bookname, pagenum, linenum)		
+		postContent = postcontent
+		
 		# Insert into database
-		try:
-			# Check for no posts in database associated with bookname
-			if (bool(self.postsDB[bookname]) == False):
-				postInfo = {}
-				postContent = {}
-				self.postsDB[bookname] = (postInfo, postContent)
+		self.db[new_post_id] = (postInfo, postContent)
 
-			postInfo, postContent = self.postsDB[bookname]
-
-			# Generate an id for the post
-			new_post_id = self.generatePostID()
-			
-			# Insert the information into database
-			postInfo[new_post_id] = (sendername, bookname, pagenum, linenum)		
-			postContent[new_post_id] = postcontent
-
-			# Print successful message
-			newPostTuple = (bookname, pagenum, linenum, new_post_id)
-			print "Post added to the database and given serial number", newPostTuple
-
-		except KeyError:
-			print "Error: Book name '%s' not found." % bookname
+		# Print successful message
+		newPostTuple = (bookname, pagenum, linenum, new_post_id)
+		print "Post added to the database and given serial number", newPostTuple
 
 	# Export db as a string
 	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
@@ -100,17 +91,45 @@ class ServerDB(object):
 	def exportAsStr(self):
 		# Loop through all books and posts
 		dbStr = ""
-		for bookname in self.postsDB.keys():
-			if (bool(self.postsDB[bookname]) == False):
-				continue;
-			postInfo, postContent = self.postsDB[bookname]
-			for postID in postInfo.keys():
-				sendername, bookname, pagenumber, linenumber = postInfo[postID]
-				dbStr = dbStr + "#PostInfo#" + str(postID) + "#" + sendername + "#" \
-					+ bookname + "#" + str(pagenumber) + "#" + str(linenumber) + "\n"
-				postcontent = postContent[postID]
-				dbStr = dbStr + "#PostContent#" + str(postID) + "#" + postcontent + "\n"
-		return dbStr	
+		for postID in self.db.keys():
+			postInfo, postContent = self.db[postID]
+			sendername, bookname, pagenum, linenum = postInfo
+			postcontent = postContent
+			dbStr = dbStr + "#PostInfo#" + str(postID) + "#" + sendername + "#" \
+				+ bookname + "#" + str(pagenum) + "#" + str(linenum) + "\n"
+			dbStr = dbStr + "#PostContent#" + str(postID) + "#" + postcontent + "\n"
+		return dbStr
+
+	# Return a list of postID's that are NOT in the given compareList
+	def consult(self, compareList):
+		returnList = []
+		for postID in self.db.keys():
+			if not (postID in compareList):
+				returnList.append(postID)
+		return returnList
+
+	# Convert a post with given ID into a tuple consisting of two strings
+	# in the format:
+	# (postInfoStr, postContentStr)
+	# postInfoStr: '#PostInfo#[postID]#[sender]#[bookname]#[page]#[line]'
+	# postContentStr: '#PostContent#[postID]#[post content]'
+	def getPostAsStr(self, postID):
+		try:
+			# Obtain and parse the info in the db
+			postInfo, postContent = self.db[postID]
+			sendername, bookname, pagenum, linenum = postInfo		
+			postContent = postContent
+
+			# Construct the return strings and final tuple
+			postInfoStr = "#PostInfo#" + str(postID) + "#" + sendername + "#" \
+					+ bookname + "#" + str(pagenum) + "#" + str(linenum)
+			postContentStr = "#PostContent#" + str(postID) + "#" + postContent
+
+			return (postInfoStr, postContentStr) 		
+
+		except KeyError:
+			print "Error: postID of %d not found." % postID
+
 
 	# Generate a unique forum post serial ID
 	def generatePostID(self):	
@@ -152,74 +171,128 @@ class ClientThread(threading.Thread):
 
 		while not self.client_stop:
 			
-			# Obtain lists of ready sockets returned by Select
-			read_sockets, write_sockets, error_sockets = select.select(self.listen_sockets, [], [])
+			data = self.selectRecv(BUFFER_SIZE)
+			if data == "":
+				continue
+			msg_components = data.split('#')
 
-			# Find the socket for this particular client
-			# and read any incoming data	
-			for rsock in read_sockets:
+			# Determine the type of information received
+			# Intro message received
+			if (msg_components[1] == "Intro"):
+				# Parse information about client
+				client_user_name = msg_components[2]
+				client_opmode = msg_components[3]
+				self.client.user_name = client_user_name
+				self.client.opmode = client_opmode		
 
-				# Ready to read client's socket
-				if (rsock == self.client.sock):
+			# Clean exit message received
+			elif (msg_components[1] == "Exit"):
+				# Cut connection with client
+				self.listen_sockets.remove(self.client.sock)
+				self.client_stop = True
 
-					# Obtain the message (if any)
-					recv_msg = rsock.recv(BUFFER_SIZE)
-					print "Received data: %s" % recv_msg
-	
-					# Extract information
-					msg_components = recv_msg.split('#');
+			# New Post Information message received, in the format:
+			# '#NewPostInfo#SenderName#BookName#PageNumber#LineNumber'
+			# NOTE: This should be received BEFORE a 'New Post Content' message
+			elif (msg_components[1] == "NewPostInfo"):
+				# Check validity
+				if (len(msg_components) < 6):
+					print "Error: Invalid 'New Post Info' message received."
+				else:
+					print "New post received from ", self.client.user_name
+					newPostInfo = recv_msg
+					
+			# New Post Content message received, in the format:
+			# '#NewPostContent#Content'
+			# NOTE: This should be received IMMEDIATELY AFTER a 'New Post Information' message
+			elif (msg_components[1] == "NewPostContent"):
+				# Check validity
+				if (len(msg_components) < 3):
+					print "Error: Invalid 'New Post Content' message received."
+				else:
+					newPostContent = recv_msg
 
-					# Determine the type of information received
+					# Create a new entry in the db for this new forum post
+					serverDB.insertPost(newPostInfo, newPostContent)
 
-					# Intro message received
-					if (msg_components[1] == "Intro"):
-						# Parse information about client
-						client_user_name = msg_components[2]
-						client_opmode = msg_components[3]
-						self.client.user_name = client_user_name
-						self.client.opmode = client_opmode		
+					# Reset the strings for the posts
+					newPostInfo = ""
+					newPostContent = ""
 
-					# Clean exit message received
-					elif (msg_components[1] == "Exit"):
-						# Cut connection with client
-						self.listen_sockets.remove(rsock)
-						self.client_stop = True
+			# New Posts Request message received, in the format:
+			# '#NewPostsRequest'
+			elif (msg_components[1] == 'NewPostsRequest'):
+				
+				clientPostIDs = msg_components[2].split(',')
+				
+				# Consult the database for a list of ID's that are not in 
+				# the client's list
+				newPostIDList = serverDB.consult(clientPostIDs)
 
-					# New Post Information message received, in the format:
-					# '#NewPostInfo#SenderName#BookName#PageNumber#LineNumber'
-					# NOTE: This should be received BEFORE a 'New Post Content' message
-					elif (msg_components[1] == "NewPostInfo"):
-						# Check validity
-						if (len(msg_components) < 6):
-							print "Error: Invalid 'New Post Info' message received."
-						else:
-							print "New post received from ", self.client.user_name
-							newPostInfo = recv_msg
-							
-					# New Post Content message received, in the format:
-					# '#NewPostContent#Content'
-					# NOTE: This should be received IMMEDIATELY AFTER a 'New Post Information' message
-					elif (msg_components[1] == "NewPostContent"):
-						# Check validity
-						if (len(msg_components) < 3):
-							print "Error: Invalid 'New Post Content' message received."
-						else:
-							newPostContent = recv_msg
+				# Construct a list of posts that client does not have
+				# in the format:
+				# [ (postInfoStr, postContentStr) ]
+				# postInfoStr: '#PostInfo#[postID]#[sender]#[bookname]#[page]#[line]'
+				# postContentStr: '#PostContent#[postID]#[post content]'
+				newPostStrList = []
+				for newPostID in newPostIDList:
+					postTuple = serverDB.getPostAsStr(newPostID)
+					newPostStrList.append(postTuple)
 
-							# Create a new entry in the db for this new forum post
-							serverDB.insertPost(newPostInfo, newPostContent)
-
-							# Reset the strings for the posts
-							newPostInfo = ""
-							newPostContent = ""
-
-					else:
-						# Unknown type of message
-						reply_msg = "Invalid message."
-						rsock.send(reply_msg)
+				# Dissect the posts into their components and add them to the send list 
+				newPostComponentsStrList = []
+				for postTuple in newPostStrList:
+					postInfoStr, postContentStr = postTuple
+					newPostComponentsStrList.append(postInfoStr)
+					newPostComponentsStrList.append(postContentStr)
+				
+				# Send the list of posts client does NOT have
+				print "Sending new posts to client %s..." % self.client.user_name
+				self.sendStream(newPostComponentsStrList, 'NewPosts', 'BeginNewPosts', 'PostComponentRecvd', 'EndNewPosts')
+				print "Successfully sent new posts."
+				
+			else:
+				# Unknown type of message
+				reply_msg = "Invalid message."
+				rsock.send(reply_msg)
 
 		# Close the socket
-		self.client.sock.close()		 		
+		self.client.sock.close()	
+
+	# Send a stream of data to client, while controlling when the server
+	# should continue sending
+	# Note: Tacks on a '#' to endMsg and ackPhrase to adhere to message format rules
+	def sendStream(self, listToSend, startMsg, startAckPhrase, ackPhrase, endMsg):
+
+		# Send start message
+		self.client.sock.send('#' + startMsg)
+
+		# Wait for an ack from client to start stream before sending stream items
+		msg = self.selectRecv(BUFFER_SIZE)
+		while (msg != ('#' + startAckPhrase)):
+			msg = self.selectRecv(BUFFER_SIZE)
+
+		# Act received. Start sending stream
+		for listItem in listToSend:
+			print "Sending %s..." % listItem
+			self.client.sock.send(listItem)
+			print "Sent %s." % listItem
+
+			# Wait for user acknowledgement
+			msg = self.selectRecv(BUFFER_SIZE)
+			while (msg != ('#' + ackPhrase)):
+				msg = self.selectRecv(BUFFER_SIZE)
+
+		# Send end message to indicate (to client) end of stream
+		self.client.sock.send('#' + endMsg)
+
+	# Use 'select' module to obtain data from buffer
+	def selectRecv(self, bufferSize):
+		read_sockets, write_sockets, error_sockets = select.select(self.listen_sockets, [], [])
+		for rs in read_sockets:
+			if (rs == self.client.sock):
+				data = self.client.sock.recv(bufferSize)
+				return data
 
 # ----------------------------------------------------
 # MAIN
@@ -272,7 +345,7 @@ print "Intitialising database..."
 serverDB = ServerDB()
 
 # DEBUGGING
-#runDBTests()
+runDBTests()
 #exit()
 
 # Prepare message buffer size

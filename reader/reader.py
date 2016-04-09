@@ -377,8 +377,26 @@ class ReaderDB(object):
 				dbStr = dbStr + "#PostContent#" + str(postID) + "#" + postcontent + "\n"
 		return dbStr
 
+	# Obtains a list of post ID's in the entire database
+	def getAllPostIDs(self):
+		# Loop through all books and posts
+		postIDs = []
+		for bookName in self.db.keys():
+			if (bool(self.db[bookName]) == False):
+				continue
+			postInfo, postContent = self.db[bookName]	
+			for postID in postInfo.keys():
+				postIDs.append(postID)
+		return postIDs
+		
+
 # This class is the thread that runs when reader is listening for input from server
+# NOTE: All messages sent by server should start with '#', followed by a phrase
+# that helps reader identify what message it is
 class ListenThread(threading.Thread):
+	
+	# Constants
+	BUFFER_SIZE = 1024
 
 	# Constructor given the socket connected to the server
 	def __init__(self,socket):
@@ -396,17 +414,66 @@ class ListenThread(threading.Thread):
 		# Constantly listen for messages until event is set
 		while not self.event.isSet():
 				
-			# Obtain lists of ready sockets
-			read_sockets, write_sockets, error_sockets = select.select(self.listen_sockets, [], [])
+			data = self.selectRecv()
+				
+			# Parse the data received
+			print "Data recvd: ", data
 
-			# Read any incoming data from the server	
-			for rs in read_sockets:
-				if rs == self.socket:
-					data = rs.recv(BUFFER_SIZE)
-					if data != "":
-						print "Data received: ", data
+			if data == "":
+				continue
+			data = data.split('#')
 
+			# Server is returning a stream of new posts
+			# Patiently receive the stream of strings from server
+			if (data[1] == 'NewPosts'):
+				# Acknowledge server's intention to send a list of new posts
+				newPostsStrList = []
+				self.receiveStream(newPostsStrList, 'BeginNewPosts', 'PostComponentRecvd', 'EndNewPosts')
+				# self.processNewPosts(newPostsStrList)
+
+				# debugging
+				for newPost in newPostsStrList:
+					print "New post: ", newPost
+						
 		sock.close()
+
+	# Obtain a stream of data from server, while controlling when the client
+	# should keep receiving
+	# NOTE: Tacks on a '#' to ackPhrase to adhere to message format rules
+	def receiveStream(self, recvList, startAckPhrase, ackPhrase, endMsg):
+		
+		# Send the startAckPhrase to indicate the server can begin stream sending
+		self.socket.send('#' + startAckPhrase)
+
+		# Begin receiving the stream
+		msg = self.selectRecv()
+		while (msg == ""):
+			msg = self.selectRecv()
+		msgComponents = msg.split('#')
+
+		# Parse each stream message
+		while (msgComponents[1] != endMsg):
+			recvList.append(msg)
+			
+			# Send an ack that a stream message is received
+			self.socket.send('#' + ackPhrase)
+		
+			# Re-listen for a stream message
+			msg = self.selectRecv()
+			while (msg == ""):
+				msg = self.selectRecv()
+			msgComponents = msg.split('#')
+
+		return recvList
+
+	# Use 'select' module to obtain data from buffer
+	def selectRecv(self):
+		read_sockets, write_sockets, error_sockets = select.select(self.listen_sockets, [], [])
+		for rs in read_sockets:
+			if (rs == self.socket):
+				data = self.socket.recv(self.BUFFER_SIZE)
+				return data
+
 # ----------------------------------------------------
 # MAIN
 # ----------------------------------------------------
@@ -445,10 +512,31 @@ def runDBTests():
 	print readerDB.exportAsStr()
 
 # Uploads a new post to the server
+# Todo: Use a function called 'sendStream(endMsg, recvAck, listToSend)'
 def sendNewPost(postInfoStr, postContentStr):
+	# sock.send("#UploadPost")
+	# listToSend = [postInfoStr, postContentStr]
+	# sendStream('EndUploadPost','PostComponentRecvd', listToSend)
 	sock.send(postInfoStr)
 	time.sleep(0.5)
 	sock.send(postContentStr)
+
+# Request a sync between posts in readerDB and server
+def reqSyncPosts():
+	print "Requesting for server to send new posts..."
+	currentPosts = readerDB.getAllPostIDs()
+	
+	# Construct the string of post ID's, separated by commas
+	# Format: #NewPostsRequest#[postID],[postID],[postID],...
+	newPostsReqStr = "#NewPostsRequest#"
+	for postIDIndex in range (0, len(currentPosts)):
+		newPostsReqStr = newPostsReqStr + str(currentPosts[postIDIndex])
+		if (postIDIndex < len(currentPosts)-1):
+			newPostsReqStr = newPostsReqStr + ","
+	
+	# Send the string to server
+	sock.send(newPostsReqStr)
+	print "Request submitted."
 
 #Usage: python reader.py mode polling_interval user_name server_name server_port_number
 
@@ -497,10 +585,7 @@ for book in booklist:
 	books[book_dir].linkDB(readerDB)
 
 # DEBUGGING
-runDBTests()
-
-# Prepare the buffer size
-BUFFER_SIZE = 1024
+#runDBTests()
 
 # Prepare the socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)	# TCP
@@ -603,6 +688,16 @@ while (not reader_exit_req):
 
 		# Display posts at the current book, page, and line
 		books[currentBookname].displayPosts(currentPagenumber, postsLine)
+
+	# Update the database with server
+	elif (user_input[0] == 'serversync'):
+		
+		print "Database before syncing:"
+		print readerDB.exportAsStr()
+		reqSyncPosts()
+
+		print "Database after syncing:"
+		print readerDB.exportAsStr()
 	
 	# Unknown command
 	else:
