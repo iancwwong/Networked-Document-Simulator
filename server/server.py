@@ -3,7 +3,7 @@
 import socket
 import select
 import threading
-import time
+import random
 from sys import argv
 
 # ----------------------------------------------------
@@ -31,27 +31,90 @@ class ClientObj(object):
 		print "Address: \t",self.addr
 
 # This class represents the database for the server
+# ie postsDB = { "bookname": (postInfo, postContent) }
+#    postInfo = { "postID": (senderName, pageNumber, lineNumber, read/unread) }
+#    postContent = { "postID": content }
 class ServerDB(object):
+
+	# Constants
+	# For generating serial numbers
+	MIN_ID_VAL = 1000
+	MAX_ID_VAL = 9999
+
+	postsDB = {}
 
 	# Constructor
 	def __init__(self):
+
+		# Initialise the dicts
+		for book in booklist:
+			bookname, bookauthor = book
+			self.postsDB[bookname] = {}
 		
 		# Maintain a list of serial numbers / post ID's
 		self.post_ids = []
 
 	# Insert a new forum post into database
-	# given a ForumPost object and the username who posted it
-	def insertPost(forumPost, author):
-		
-		# Generate an id for the post
-		new_post_id = self.generatePostID()
-		while (key in self.post_ids):
-			new_post_id = self.generatePostID()
-		
-		self.post_ids.append(new_post_id)
+	# given two strings that contain information about the post:
+	# postInfoString: 	'#NewPostInfo#SenderName#BookName#PageNumber#LineNumber'
+	# postContentString: 	'#NewPostContent#Content'
+	# Note: Assumes the strings given are in the correct format
+	def insertPost(self, postInfoString, postContentString):
 
-		
-		
+		# Parse the strings
+		postInfoString = postInfoString.split('#')
+		postContentString = postContentString.split('#')
+		sendername = postInfoString[2]
+		bookname = postInfoString[3]
+		pagenum = postInfoString[4]
+		linenum = postInfoString[5]
+		postcontent = postContentString[2]
+
+		# Insert into database
+		try:
+			# Check for no posts in database associated with bookname
+			if (bool(self.postsDB[bookname]) == False):
+				postInfo = {}
+				postContent = {}
+				self.postsDB[bookname] = (postInfo, postContent)
+
+			postInfo, postContent = self.postsDB[bookname]
+
+			# Generate an id for the post
+			new_post_id = self.generatePostID()
+			
+			# Insert the information into database
+			postInfo[new_post_id] = (sendername, bookname, pagenum, linenum)		
+			postContent[new_post_id] = postcontent
+
+		except KeyError:
+			print "Error: Book name '%s' not found." % bookname
+
+	# Export db as a string
+	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
+	# postContentString: 	'#PostContent#Id#Content'
+	def exportAsStr(self):
+		# Loop through all books and posts
+		dbStr = ""
+		for bookname in self.postsDB.keys():
+			if (bool(self.postsDB[bookname]) == False):
+				continue;
+			postInfo, postContent = self.postsDB[bookname]
+			for postID in postInfo.keys():
+				sendername, bookname, pagenumber, linenumber = postInfo[postID]
+				dbStr = dbStr + "#PostInfo#" + str(postID) + "#" + sendername + "#" \
+					+ bookname + "#" + str(pagenumber) + "#" + str(linenumber) + "\n"
+				postcontent = postContent[postID]
+				dbStr = dbStr + "#PostContent#" + str(postID) + "#" + postcontent + "\n"
+		return dbStr	
+
+	# Generate a unique forum post serial ID
+	def generatePostID(self):	
+		new_post_id = random.randint(self.MIN_ID_VAL, self.MAX_ID_VAL)		
+		while (new_post_id in self.post_ids):
+			new_post_id = random.randint(self.MIN_ID_VAL, self.MAX_ID_VAL)
+		self.post_ids.append(new_post_id)
+		return new_post_id
 
 # This is the thread that is executed when a server serves a single client
 class ClientThread(threading.Thread):
@@ -129,13 +192,55 @@ class ClientThread(threading.Thread):
 # MAIN
 # ----------------------------------------------------
 
+# Basic testing for database
+def runDBTests():
+
+	print "Current database:"
+	print serverDB.exportAsStr()
+
+	# postInfoString: 	'#NewPostInfo#SenderName#BookName#PageNumber#LineNumber'
+	# postContentString: 	'#NewPostContent#Content'
+	postInfoStr = "#NewPostInfo#iancwwong#shelley#2#9"
+	postContentStr = "#NewPostContent#Why is this line blank?"
+	serverDB.insertPost(postInfoStr, postContentStr)
+
+	postInfoStr = "#NewPostInfo#thetoxicguy#shelley#2#9"
+	postContentStr = "#NewPostContent#Because the author wrote it that way, you retard?"
+	serverDB.insertPost(postInfoStr, postContentStr)
+
+	postInfoStr = "#NewPostInfo#jasonng#exupery#3#4"
+	postContentStr = "#NewPostContent#What's this line talking about?"
+	serverDB.insertPost(postInfoStr, postContentStr)
+
+	postInfoStr = "#NewPostInfo9#mohawk#joyce#1#2"
+	postContentStr = "#NewPostContent#Repetition of 'my' is used."
+	serverDB.insertPost(postInfoStr, postContentStr)
+
+	print "Database with info:"
+	print serverDB.exportAsStr()
+	
+
 # Extract the port number from args
 script, port_number_str = argv
 port_number = int(port_number_str)
 
+# Parse information about the books contained in the 'booklist' file
+# with format: [book folder name],[book author]
+print "Loading booklist..."
+booklist_file = open('booklist','r').read().split('\n')
+booklist_file.remove('')
+booklist = []
+for line in booklist_file:
+	line = line.split(',')
+	booklist.append((line[0], line[1]))
+
 # Create the server database
-server_db = ServerDB()
-print "Initialised database for forum discussion posts"
+print "Intitialising database..."
+serverDB = ServerDB()
+
+# DEBUGGING
+runDBTests()
+exit()
 
 # Prepare message buffer size
 BUFFER_SIZE = 1024

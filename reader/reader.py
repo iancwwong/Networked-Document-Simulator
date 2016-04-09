@@ -359,7 +359,6 @@ class ReaderDB(object):
 				return	
 
 	# Export db as a string
-	# NOTE: essentially same format as ForumPostObj
 	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber#Read/Unread'
 	# postContentString: 	'#PostContent#Id#Content'
 	def exportAsStr(self):
