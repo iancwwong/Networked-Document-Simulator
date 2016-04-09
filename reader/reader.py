@@ -256,7 +256,7 @@ class ReaderDB(object):
 			self.db[bookname] = {}
 
 	# Insert a new post, given two strings:
-	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber#Read/Unread'
+	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
 	# postContentString: 	'#PostContent#Id#Content' 
 	# NOTE: Each postID corresponds to exactly 1 postInfo and postContent entry
 	def insertPost(self, postInfoStr, postContentStr):
@@ -278,8 +278,8 @@ class ReaderDB(object):
 		bookname = postInfoComponents[4]
 		pagenumber = int(postInfoComponents[5])
 		linenumber = int(postInfoComponents[6])
-		readstatus = int(postInfoComponents[7])		# ToFix: This should NOT be here. It should be, by default, 'UNREAD'
-		postcontent = postContentComponents[3]		# ToFix: If content string has a '#', this will be wrong
+		readstatus = self.UNREAD	
+		postcontent = '#'.join(postContentComponents[3:])
 
 		try:
 			# Check whether there are tuples in the db for the book
@@ -415,21 +415,21 @@ def runDBTests():
 	# DEBUGGING
 
 	# Test inserting forum posts
-	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber#Read/Unread'
+	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
 	# postContentString: 	'#PostContent#Id#Content'
-	postInfoStr = "#PostInfo#3093#iancwwong#shelley#2#9#1"
+	postInfoStr = "#PostInfo#3093#iancwwong#shelley#2#9"
 	postContentStr = "#PostContent#3093#Why is this line blank?"
 	readerDB.insertPost(postInfoStr, postContentStr)
 
-	postInfoStr = "#PostInfo#3094#thetoxicguy#shelley#2#9#1"
+	postInfoStr = "#PostInfo#3094#thetoxicguy#shelley#2#9"
 	postContentStr = "#PostContent#3094#Because the author wrote it that way, you retard?"
 	readerDB.insertPost(postInfoStr, postContentStr)
 
-	postInfoStr = "#PostInfo#2041#jasonng#exupery#3#4#1"
-	postContentStr = "#PostContent#2041#What's this line talking about?"
+	postInfoStr = "#PostInfo#2041#jasonng#exupery#3#4"
+	postContentStr = "#PostContent#2041#What's this line # talking about?"
 	readerDB.insertPost(postInfoStr, postContentStr)
 
-	postInfoStr = "#PostInfo#5699#mohawk#joyce#1#2#1"
+	postInfoStr = "#PostInfo#5699#mohawk#joyce#1#2"
 	postContentStr = "#PostContent#5699#Repetition of 'my' is used."
 	readerDB.insertPost(postInfoStr, postContentStr)
 
