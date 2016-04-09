@@ -64,6 +64,8 @@ class Book(object):
 			elif (status == self.READ_POST):
 				self.setPostRead(pagenum, linenum)
 
+		print "Book %s updated!" % self.bookname
+
 	# Display the posts for a particular page and line
 	# Involves querying the linked database
 	# NOTE: The given pageNum and lineNum are NOT index based
@@ -438,23 +440,17 @@ class ListenThread(threading.Thread):
 	# Involves examing each item in the format:
 	# '#NewPostData#PostInfo#[postID]#[sender]#[bookname]#[pagenum]#[linenum]|#PostContent#[postId]#[postContent]''
 	def processNewPosts(self, newPostsList):
-		print "Processing posts.."
 
+		# Parse and insert each post item into db
 		for newPostStr in newPostsList:
 			postData = newPostStr.split('#NewPostData')[1]
 			postInfoStr = postData.split('|')[0]
-			postContentStr = postData.split('|')[1]
+			postContentStr = postData.split('|')[1]			
+			readerDB.insertPost(postInfoStr, postContentStr)
 
-			print "Strings to pass into database:"
-			print postInfoStr
-			print postContentStr
-			
-			#readerDB.insertPost(postInfoStr, postContentStr)
-			
-
-		# Assign postInfoStr and postComponentStr accordingly (they occur in pairs)
-
-		print "Finished processing posts."		
+		# Update all the books	
+		for bookname in books.keys():
+			books[bookname].update()
 
 	# Obtain a stream of data from server, while controlling when the client
 	# should keep receiving
@@ -714,9 +710,6 @@ while (not reader_exit_req):
 		print "Database before syncing:"
 		print readerDB.exportAsStr()
 		reqSyncPosts()
-
-		print "Database after syncing:"
-		print readerDB.exportAsStr()
 	
 	# Unknown command
 	else:
