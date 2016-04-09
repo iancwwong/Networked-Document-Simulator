@@ -426,16 +426,35 @@ class ListenThread(threading.Thread):
 			# Server is returning a stream of new posts
 			# Patiently receive the stream of strings from server
 			if (data[1] == 'NewPosts'):
-				# Acknowledge server's intention to send a list of new posts
-				newPostsStrList = []
-				self.receiveStream(newPostsStrList, 'BeginNewPosts', 'PostComponentRecvd', 'EndNewPosts')
-				# self.processNewPosts(newPostsStrList)
 
-				# debugging
-				for newPost in newPostsStrList:
-					print "New post: ", newPost
+				# Acknowledge server's intention to send a list of new posts
+				postComponentsList = []
+				self.receiveStream(postComponentsList, 'BeginNewPosts', 'PostComponentRecvd', 'EndNewPosts')
+				self.processNewPosts(postComponentsList)
 						
 		sock.close()
+
+	# Process each new post in a given string list
+	# Involves examing each item in the format:
+	# '#NewPostData#PostInfo#[postID]#[sender]#[bookname]#[pagenum]#[linenum]|#PostContent#[postId]#[postContent]''
+	def processNewPosts(self, newPostsList):
+		print "Processing posts.."
+
+		for newPostStr in newPostsList:
+			postData = newPostStr.split('#NewPostData')[1]
+			postInfoStr = postData.split('|')[0]
+			postContentStr = postData.split('|')[1]
+
+			print "Strings to pass into database:"
+			print postInfoStr
+			print postContentStr
+			
+			#readerDB.insertPost(postInfoStr, postContentStr)
+			
+
+		# Assign postInfoStr and postComponentStr accordingly (they occur in pairs)
+
+		print "Finished processing posts."		
 
 	# Obtain a stream of data from server, while controlling when the client
 	# should keep receiving

@@ -234,21 +234,29 @@ class ClientThread(threading.Thread):
 				# [ (postInfoStr, postContentStr) ]
 				# postInfoStr: '#PostInfo#[postID]#[sender]#[bookname]#[page]#[line]'
 				# postContentStr: '#PostContent#[postID]#[post content]'
-				newPostStrList = []
+				newPostTupleList = []
 				for newPostID in newPostIDList:
 					postTuple = serverDB.getPostAsStr(newPostID)
-					newPostStrList.append(postTuple)
+					newPostTupleList.append(postTuple)
 
-				# Dissect the posts into their components and add them to the send list 
-				newPostComponentsStrList = []
-				for postTuple in newPostStrList:
+				print newPostTupleList
+
+				# Append the two parts and send it off in the format:
+				# 'NewPostData#PostInfo...#PostContent...'
+				newPostStrList = []
+				for postTuple in newPostTupleList:
 					postInfoStr, postContentStr = postTuple
-					newPostComponentsStrList.append(postInfoStr)
-					newPostComponentsStrList.append(postContentStr)
+					print postTuple
+					postStr = "#NewPostData" + postInfoStr + '|' + postContentStr
+					newPostStrList.append(postStr)
+
+				print "Sending these posts:"
+				for newPost in newPostStrList:
+					print newPost
 				
 				# Send the list of posts client does NOT have
 				print "Sending new posts to client %s..." % self.client.user_name
-				self.sendStream(newPostComponentsStrList, 'NewPosts', 'BeginNewPosts', 'PostComponentRecvd', 'EndNewPosts')
+				self.sendStream(newPostStrList, 'NewPosts', 'BeginNewPosts', 'PostComponentRecvd', 'EndNewPosts')
 				print "Successfully sent new posts."
 				
 			else:
@@ -274,9 +282,7 @@ class ClientThread(threading.Thread):
 
 		# Act received. Start sending stream
 		for listItem in listToSend:
-			print "Sending %s..." % listItem
 			self.client.sock.send(listItem)
-			print "Sent %s." % listItem
 
 			# Wait for user acknowledgement
 			msg = self.selectRecv(BUFFER_SIZE)
