@@ -141,6 +141,11 @@ class ClientThread(threading.Thread):
 
 	# Serve the client
 	def serve_client(self):
+
+		# Constants within scope of client thread
+		newPostInfo = ()
+		newPostContent = ()
+
 		while not self.client_stop:
 			
 			# Obtain lists of ready sockets returned by Select
@@ -161,24 +166,47 @@ class ClientThread(threading.Thread):
 					msg_components = recv_msg.split('#');
 
 					# Determine the type of information received
+
+					# Intro message received
 					if (msg_components[1] == "Intro"):
-						# Intro message received - process information
+						# Parse information about client
 						client_user_name = msg_components[2]
 						client_opmode = msg_components[3]
 						self.client.user_name = client_user_name
-						self.client.opmode = client_opmode
-						#rsock.send("Hello!")			
+						self.client.opmode = client_opmode		
 
+					# Clean exit message received
 					elif (msg_components[1] == "Exit"):
-						# Exit message received - cut connection with client
+						# Cut connection with client
 						self.listen_sockets.remove(rsock)
 						self.client_stop = True
 
-					elif (msg_components[1] == "Debug"):
-						# Debugging message received:
-						reply_msg = \
-						"Debug message received. Parameters:" + msg_components[2]
-						rsock.send(reply_msg)		
+					# New Post Information message received, in the format:
+					# '#NewPostInfo#SenderName#BookName#PageNumber#LineNumber'
+					# NOTE: This should be received BEFORE a 'New Post Content' message
+					elif (msg_components[1] == "NewPostInfo"):
+						# Check validity
+						if (len(msg_components) < 6):
+							print "Error: Invalid 'New Post Info' message received."
+						else:
+							newPostInfo = recv_msg
+							
+					# New Post Content message received, in the format:
+					# '#NewPostContent#Content'
+					# NOTE: This should be received IMMEDIATELY AFTER a 'New Post Information' message
+					elif (msg_components[1] == "NewPostContent"):
+						# Check validity
+						if (len(msg_components) < 3):
+							print "Error: Invalid 'New Post Content' message received."
+						else:
+							newPostContent = recv_msg
+
+							# Create a new entry in the db for this new forum post
+							serverDB.insertPost(newPostInfo, newPostContent)
+
+							# Reset the strings for the posts
+							newPostInfo = ""
+							newPostContent = ""
 
 					else:
 						# Unknown type of message
@@ -239,8 +267,8 @@ print "Intitialising database..."
 serverDB = ServerDB()
 
 # DEBUGGING
-runDBTests()
-exit()
+#runDBTests()
+#exit()
 
 # Prepare message buffer size
 BUFFER_SIZE = 1024

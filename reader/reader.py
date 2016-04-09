@@ -444,6 +444,12 @@ def runDBTests():
 	print "Database:"
 	print readerDB.exportAsStr()
 
+# Uploads a new post to the server
+def sendNewPost(postInfoStr, postContentStr):
+	sock.send(postInfoStr)
+	time.sleep(0.5)
+	sock.send(postContentStr)
+
 #Usage: python reader.py mode polling_interval user_name server_name server_port_number
 
 # Extract information from arguments provided
@@ -580,9 +586,8 @@ while (not reader_exit_req):
 		postContentStr = "#NewPostContent#" + postContent
 
 		print "Posting to forum..."
-		sock.send(postInfoStr)
-		time.sleep(0.5)
-		sock.send(postContentStr)
+		sendNewPost(postInfoStr, postContentStr)
+
 
 	# Display the posts for a particular line number on the current book and page
 	elif (user_input[0] == 'read_post'):
@@ -595,6 +600,8 @@ while (not reader_exit_req):
 		if (currentBookname == ""):
 			print "Uncertain book and page. Use the command 'display' to initialise."
 			continue
+
+		# Display posts at the current book, page, and line
 		books[currentBookname].displayPosts(currentPagenumber, postsLine)
 	
 	# Unknown command
