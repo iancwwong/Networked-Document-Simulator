@@ -1,4 +1,5 @@
 # This is the reader component of the e-book/server system
+# Written by: Ian Wong
 
 import socket
 import select
@@ -490,7 +491,7 @@ class ListenThread(threading.Thread):
 				return data
 
 # ----------------------------------------------------
-# MAIN
+# FUNCTIONS
 # ----------------------------------------------------
 
 def runDBTests():
@@ -527,14 +528,9 @@ def runDBTests():
 	print readerDB.exportAsStr()
 
 # Uploads a new post to the server
-# Todo: Use a function called 'sendStream(endMsg, recvAck, listToSend)'
 def sendNewPost(postInfoStr, postContentStr):
-	# sock.send("#UploadPost")
-	# listToSend = [postInfoStr, postContentStr]
-	# sendStream('EndUploadPost','PostComponentRecvd', listToSend)
-	sock.send(postInfoStr)
-	time.sleep(0.5)
-	sock.send(postContentStr)
+	newPostStr = '#UploadPost' + postInfoStr + '|' + postContentStr
+	sock.send(newPostStr)
 
 # Request a sync between posts in readerDB and server
 def reqSyncPosts():
@@ -552,6 +548,44 @@ def reqSyncPosts():
 	# Send the string to server
 	sock.send(newPostsReqStr)
 	print "Request submitted."
+
+# Send a stream of data to client, while controlling when the server
+# should continue sending. Uses the reader socket to send messages.
+# Note: Tacks on a '#' to endMsg and ackPhrase to adhere to message format rules
+def sendStream(listToSend, startMsg, startAckPhrase, ackPhrase, endMsg):
+	
+	# Send start message
+	sock.send('#' + startMsg)
+	
+	# Wait for an ack from server to start stream before sending stream items
+	msg = selectRecv(BUFFER_SIZE)
+	while (msg != ('#' + startAckPhrase)):
+		msg = selectRecv(BUFFER_SIZE)
+
+	# Ack received. Start sending stream
+	# Ack received. Start sending stream
+	for listItem in listToSend:
+		sock.send(listItem)
+
+		# Wait for user acknowledgement
+		msg = selectRecv(BUFFER_SIZE)
+		while (msg != ('#' + ackPhrase)):
+			msg = selectRecv(BUFFER_SIZE)
+
+	# Send end message to indicate (to client) end of stream
+	sock.send('#' + endMsg)
+
+# Use 'select' module to obtain data from buffer
+def selectRecv(bufferSize):
+	read_sockets, write_sockets, error_sockets = select.select([sock], [], [])
+	for rs in read_sockets:
+		if (rs == sock):
+			data = sock.recv(bufferSize)
+			return data
+
+# ----------------------------------------------------
+# MAIN
+# ----------------------------------------------------
 
 #Usage: python reader.py mode polling_interval user_name server_name server_port_number
 

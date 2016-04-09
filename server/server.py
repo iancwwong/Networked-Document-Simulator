@@ -1,4 +1,5 @@
 # This is the server component of the e-book reader/server system
+# Written by: Ian Wong
 
 import socket
 import select
@@ -191,37 +192,25 @@ class ClientThread(threading.Thread):
 				self.listen_sockets.remove(self.client.sock)
 				self.client_stop = True
 
-			# New Post Information message received, in the format:
-			# '#NewPostInfo#SenderName#BookName#PageNumber#LineNumber'
-			# NOTE: This should be received BEFORE a 'New Post Content' message
-			elif (msg_components[1] == "NewPostInfo"):
-				# Check validity
-				if (len(msg_components) < 6):
-					print "Error: Invalid 'New Post Info' message received."
-				else:
-					print "New post received from ", self.client.user_name
-					newPostInfo = recv_msg
-					
-			# New Post Content message received, in the format:
-			# '#NewPostContent#Content'
-			# NOTE: This should be received IMMEDIATELY AFTER a 'New Post Information' message
-			elif (msg_components[1] == "NewPostContent"):
-				# Check validity
-				if (len(msg_components) < 3):
-					print "Error: Invalid 'New Post Content' message received."
-				else:
-					newPostContent = recv_msg
+			# Reader is uploading a new forum post
+			# '#UploadPost#PostInfo...|#PostContent...
+			elif (msg_components[1] == 'UploadPost'):
 
-					# Create a new entry in the db for this new forum post
-					serverDB.insertPost(newPostInfo, newPostContent)
+				print "New post received from %s!" % self.client.user_name
 
-					# Reset the strings for the posts
-					newPostInfo = ""
-					newPostContent = ""
+				# parse the strings that contain information of the post
+				postDataStr = data.split('#UploadPost')[1]
+				postInfoStr = postDataStr.split('|')[0]
+				postContentStr = postDataStr.split('|')[1]
+	
+				# Insert the new post into database
+				serverDB.insertPost(postInfoStr, postContentStr)
 
 			# New Posts Request message received, in the format:
 			# '#NewPostsRequest'
 			elif (msg_components[1] == 'NewPostsRequest'):
+
+				print "Query for new posts received from %s!" % self.client.user_name
 				
 				clientPostIDs = msg_components[2].split(',')
 				
@@ -239,25 +228,16 @@ class ClientThread(threading.Thread):
 					postTuple = serverDB.getPostAsStr(newPostID)
 					newPostTupleList.append(postTuple)
 
-				print newPostTupleList
-
 				# Append the two parts and send it off in the format:
-				# 'NewPostData#PostInfo...#PostContent...'
+				# 'NewPostData#PostInfo...|#PostContent...'
 				newPostStrList = []
 				for postTuple in newPostTupleList:
 					postInfoStr, postContentStr = postTuple
-					print postTuple
 					postStr = "#NewPostData" + postInfoStr + '|' + postContentStr
 					newPostStrList.append(postStr)
-
-				print "Sending these posts:"
-				for newPost in newPostStrList:
-					print newPost
 				
 				# Send the list of posts client does NOT have
-				print "Sending new posts to client %s..." % self.client.user_name
 				self.sendStream(newPostStrList, 'NewPosts', 'BeginNewPosts', 'PostComponentRecvd', 'EndNewPosts')
-				print "Successfully sent new posts."
 				
 			else:
 				# Unknown type of message
@@ -280,7 +260,7 @@ class ClientThread(threading.Thread):
 		while (msg != ('#' + startAckPhrase)):
 			msg = self.selectRecv(BUFFER_SIZE)
 
-		# Act received. Start sending stream
+		# Ack received. Start sending stream
 		for listItem in listToSend:
 			self.client.sock.send(listItem)
 
