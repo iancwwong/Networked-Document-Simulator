@@ -87,6 +87,10 @@ class ServerDB(object):
 			postInfo[new_post_id] = (sendername, bookname, pagenum, linenum)		
 			postContent[new_post_id] = postcontent
 
+			# Print successful message
+			newPostTuple = (bookname, pagenum, linenum, new_post_id)
+			print "Post added to the database and given serial number", newPostTuple
+
 		except KeyError:
 			print "Error: Book name '%s' not found." % bookname
 
@@ -189,6 +193,7 @@ class ClientThread(threading.Thread):
 						if (len(msg_components) < 6):
 							print "Error: Invalid 'New Post Info' message received."
 						else:
+							print "New post received from ", self.client.user_name
 							newPostInfo = recv_msg
 							
 					# New Post Content message received, in the format:
@@ -286,7 +291,6 @@ print "Name of this server:",socket.gethostname()
 
 # Prepare the server socket to listen for
 listen_sockets = [serversock]
-
 while True:
 
 	# Obtain lists of sockets that are listenable
