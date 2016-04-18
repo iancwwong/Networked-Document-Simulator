@@ -397,18 +397,12 @@ class ReaderDB(object):
 # NOTE: All messages sent by server should start with '#', followed by a phrase
 # that helps reader identify what message it is
 class ListenThread(threading.Thread):
-	
-	# Constants
-	BUFFER_SIZE = 1024
 
 	# Constructor given the socket connected to the server
 	def __init__(self,socket):
 		threading.Thread.__init__(self)
 		self.event = threading.Event()
 		self.socket = socket
-
-		# Add the client's socket to list of sockets
-		self.listen_sockets = [self.socket]
 
 	# Execute thread - constantly listen for messages
 	# from the connected server
@@ -417,23 +411,35 @@ class ListenThread(threading.Thread):
 		# Constantly listen for messages until event is set
 		while not self.event.isSet():
 				
-			data = self.selectRecv()
-				
-			# Parse the data received
-			print "Data recvd: ", data
-
-			if data == "":
+			data = selectRecv(BUFFER_SIZE)
+			if (data == ""):
 				continue
-			data = data.split('#')
+			data_components = data.split('#')
 
 			# Server is returning a stream of new posts
 			# Patiently receive the stream of strings from server
-			if (data[1] == 'NewPosts'):
+			if (data_components[1] == 'NewPosts'):
 
-				# Acknowledge server's intention to send a list of new posts
+				# Accept the list of new posts
 				postComponentsList = []
 				self.receiveStream(postComponentsList, 'BeginNewPosts', 'PostComponentRecvd', 'EndNewPosts')
 				self.processNewPosts(postComponentsList)
+
+			# Server sends back a single post
+			if (data_components[1] == 'NewSinglePost'):
+
+				# Parse the post information, obtained in the format:
+				# '#NewSinglePost#PostInfoStr...|#PostContentStr...'
+				data = data.split('#NewSinglePost')
+				postInfoStr = data[1].split('|')[0]
+				postContentStr = data[1].split('|')[1]
+
+				# Insert into database
+				readerDB.insertPost(postInfoStr, postContentStr)
+
+				# Print out confirmation message
+				
+				
 						
 		sock.close()
 
@@ -462,9 +468,9 @@ class ListenThread(threading.Thread):
 		self.socket.send('#' + startAckPhrase)
 
 		# Begin receiving the stream
-		msg = self.selectRecv()
+		msg = selectRecv(BUFFER_SIZE)
 		while (msg == ""):
-			msg = self.selectRecv()
+			msg = selectRecv(BUFFER_SIZE)
 		msgComponents = msg.split('#')
 
 		# Parse each stream message
@@ -475,20 +481,13 @@ class ListenThread(threading.Thread):
 			self.socket.send('#' + ackPhrase)
 		
 			# Re-listen for a stream message
-			msg = self.selectRecv()
+			msg = selectRecv(BUFFER_SIZE)
 			while (msg == ""):
-				msg = self.selectRecv()
+				msg = selectRecv(BUFFER_SIZE)
 			msgComponents = msg.split('#')
 
-		return recvList
-
-	# Use 'select' module to obtain data from buffer
-	def selectRecv(self):
-		read_sockets, write_sockets, error_sockets = select.select(self.listen_sockets, [], [])
-		for rs in read_sockets:
-			if (rs == self.socket):
-				data = self.socket.recv(self.BUFFER_SIZE)
-				return data
+		return recvList		
+	
 
 # ----------------------------------------------------
 # FUNCTIONS
@@ -603,6 +602,9 @@ currentPagenum = 0
 currentLinenum = 0
 reader_exit_req = False
 
+# Constants
+BUFFER_SIZE = 1024
+
 # DEBUGGING
 print "Username: \t", user_name
 print "Connecting to: \t", server_name
@@ -683,6 +685,8 @@ while (not reader_exit_req):
 			print "Usage: display [book_name] [page_number]"
 			continue
 
+		
+
 		book_name = user_input[1]
 		page_num = int(user_input[2])
 		try:
@@ -696,6 +700,13 @@ while (not reader_exit_req):
 
 	# Send a new post to the server
 	elif (user_input[0] == 'post_to_forum'):
+
+		# Check if currentBookname/cuirrentPagenum is initialised
+		if (currentBookname == "" or currentPagenumber == ""):
+			print "Uncertain book and page. Use the command 'display' to initialise."
+			continue
+
+		# Check if command is used properly
 		if (len(user_input) < 3):
 			print "Usage: post_to_forum [line number] [post content]"
 			continue

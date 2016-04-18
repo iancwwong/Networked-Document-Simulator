@@ -85,6 +85,9 @@ class ServerDB(object):
 		# Print successful message
 		newPostTuple = (bookname, pagenum, linenum, new_post_id)
 		print "Post added to the database and given serial number", newPostTuple
+	
+		# return postID
+		return new_post_id
 
 	# Export db as a string
 	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
@@ -126,7 +129,7 @@ class ServerDB(object):
 					+ bookname + "#" + str(pagenum) + "#" + str(linenum)
 			postContentStr = "#PostContent#" + str(postID) + "#" + postContent
 
-			return (postInfoStr, postContentStr) 		
+			return (postInfoStr, postContentStr)
 
 		except KeyError:
 			print "Error: postID of %d not found." % postID
@@ -139,6 +142,19 @@ class ServerDB(object):
 			new_post_id = random.randint(self.MIN_ID_VAL, self.MAX_ID_VAL)
 		self.post_ids.append(new_post_id)
 		return new_post_id
+
+# This class is responsible for holding and pushing messages to clients
+# Uses a list of clients
+class MessagePusher(object):
+
+	# Constructor - given a list of client threads
+	def __init__(self, clientThreads):
+		self.clientThreads = clientThreads
+
+	# Push a forum post
+	def pushPost(self, postInfoStr, postContentStr):
+		for thread in clientThreads:
+			thread.pushPost(postInfoStr, postContentStr)
 
 # This is the thread that is executed when a server serves a single client
 class ClientThread(threading.Thread):
@@ -159,9 +175,8 @@ class ClientThread(threading.Thread):
 
 	# Execute thread
 	def run(self):
-		print "Starting thread for client at addr:",self.client.addr
 		self.serve_client()
-		print "Exiting thread for client at addr:", self.client.addr
+		print "Closing connection with", addr
 
 	# Serve the client
 	def serve_client(self):
@@ -173,8 +188,6 @@ class ClientThread(threading.Thread):
 		while not self.client_stop:
 			
 			data = self.selectRecv(BUFFER_SIZE)
-			if data == "":
-				continue
 			msg_components = data.split('#')
 
 			# Determine the type of information received
@@ -204,10 +217,14 @@ class ClientThread(threading.Thread):
 				postContentStr = postDataStr.split('|')[1]
 	
 				# Insert the new post into database
-				serverDB.insertPost(postInfoStr, postContentStr)
+				newPostID = serverDB.insertPost(postInfoStr, postContentStr)
+
+				# Trigger the messagePusher to push the new post
+				postInfoStr, postContentStr = serverDB.getPostAsStr(newPostID)
+				messagePusher.pushPost(postInfoStr, postContentStr)
 
 			# New Posts Request message received, in the format:
-			# '#NewPostsRequest'
+			# '#NewPostsRequest#[postID],[postID]...'
 			elif (msg_components[1] == 'NewPostsRequest'):
 
 				print "Query for new posts received from %s!" % self.client.user_name
@@ -238,6 +255,7 @@ class ClientThread(threading.Thread):
 				
 				# Send the list of posts client does NOT have
 				self.sendStream(newPostStrList, 'NewPosts', 'BeginNewPosts', 'PostComponentRecvd', 'EndNewPosts')
+				print "New posts successfully sent to %s!" % self.client.user_name
 				
 			else:
 				# Unknown type of message
@@ -245,7 +263,19 @@ class ClientThread(threading.Thread):
 				rsock.send(reply_msg)
 
 		# Close the socket
-		self.client.sock.close()	
+		self.client.sock.close()
+
+	# Send a single post to the client
+	# postInfoStr: '#PostInfo#[postID]#[sender]#[bookname]#[page]#[line]'
+	# postContentStr: '#PostContent#[postID]#[post content]'
+	def pushPost(self, postInfoStr, postContentStr):
+
+		# If client is not in 'push' mode, then ignore
+		if (self.client.opmode != "push") return
+
+		# Construct the post string, and send it
+		newSinglePost = "#NewSinglePost" + postInfoStr + '|' + postContentStr
+		self.client.sock.send(newSinglePost)
 
 	# Send a stream of data to client, while controlling when the server
 	# should continue sending
@@ -312,6 +342,11 @@ def runDBTests():
 	print serverDB.exportAsStr()
 	
 
+# Global Variables
+clientThreadList = []		# Maintain a list of client threads
+BUFFER_SIZE = 1024		# max message size
+MAX_CONNECTIONS = 1		# Num queued connections
+
 # Extract the port number from args
 script, port_number_str = argv
 port_number = int(port_number_str)
@@ -330,15 +365,13 @@ for line in booklist_file:
 print "Intitialising database..."
 serverDB = ServerDB()
 
+# Create the messagePusher object
+print "Creating message pusher..."
+messagePusher = MessagePusher(clientThreadList)
+
 # DEBUGGING
 runDBTests()
 #exit()
-
-# Prepare message buffer size
-BUFFER_SIZE = 1024
-
-# Maximum number of queued connections
-MAX_CONNECTIONS = 1
 
 # Create the socket
 serversock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)		# TCP connection
@@ -371,5 +404,8 @@ while True:
 
 			# Print confirmation message
 			print "Connection made with: ", addr
+
+			# Add to list of client threads
+			clientThreadList.append(clientThread)
 
 serversock.close()
