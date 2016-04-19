@@ -13,6 +13,229 @@ import time
 # ----------------------------------------------------
 # CLASSES
 # ----------------------------------------------------
+
+# This class represents a book
+class Book(object):
+
+	# Constants
+	UNREAD_POST = 1
+	READ_POST = 2
+
+	def __init__(self, bookName, bookAuthor):
+		self.bookname = bookName
+		self.author = bookAuthor
+		
+		# Construct the book with pages and lines
+		self.pages = []
+
+		# Determine number of pages
+		self.numpages = len([name for name in os.listdir(bookName)])
+
+		# Initialise the page objects by reading each page file
+		for pagenum in range(1,self.numpages+1):
+			pageObj = Page(bookName, pagenum)	# page numbers need an offset
+			self.pages.append(pageObj)
+
+	# Return the string in a particular page with message indication
+	# Note: Assumes pageNum starts at 1 (NOT index based)
+	def displayPage(self,pageNum):
+		if (not self.hasPage(pageNum)):
+			print "Page %d does not exist." % (pageNum)
+			return
+		print "%s Page %d:" % (self.bookname, pageNum)
+		self.pages[pageNum-1].showPage()
+
+	# Link up the book with a database for queries about post statuses
+	def linkDB(self, dbObj):
+		self.db = dbObj
+	
+	# Updates the book by changing the post status on certain lines
+	# Involves querying the linked database
+	def update(self):
+		
+		# Obtain the list of posts with their statuses
+		postsStatuses = self.db.getBookPostStatuses(self.bookname)
+		
+		# Loop through each post and set read/unread accordingly
+		for postTuple in postsStatuses:
+			# Format: [ (status, bookname, pagenum, linenum) ]
+			status, pagenum, linenum = postTuple
+			if (status == self.UNREAD_POST):
+				self.setPostUnread(pagenum, linenum)
+			elif (status == self.READ_POST):
+				self.setPostRead(pagenum, linenum)
+
+		print "Book %s updated!" % self.bookname
+
+	# Display the posts for a particular page and line
+	# Involves querying the linked database
+	# NOTE: The given pageNum and lineNum are NOT index based
+	def displayPosts(self, pageNum, lineNum):
+	
+		try:
+			# Check that the lineNum is valid
+			if (not self.pages[pageNum-1].hasLine(lineNum)):
+				print "Error: line number %d not found." % lineNum
+				return ""
+
+			# Obtain the list of posts for the particular page and line
+			# Format: [ (postID, senderName, content, read/unread) ]
+			posts = self.db.getPosts(self.bookname, pageNum, lineNum)
+		
+			# Display the retrieved posts to the user
+			print "From book by %s, Page %d, Line number %d:" % (self.author, pageNum, lineNum)	
+			print '"%s"' % self.pages[pageNum-1].getLineContent(lineNum)
+			print "Displaying posts:"
+			if (len(posts) == 0):
+				print "\tNo posts to display."
+			else:
+				for post in posts:
+					postID, senderName, postcontent, readStatus = post
+		
+					# Construct the string to be printed, containing the post
+					printStr = ""
+					if (readStatus == self.UNREAD_POST):
+						printStr = printStr + "[UNREAD]"
+					printStr = printStr + "\t" + str(postID) + " " + senderName + ": " + postcontent
+					print printStr
+
+					# Set the post to be read in the database
+					self.db.setRead(postID)
+
+				# Set the posts on the line to be 'read'
+				self.setPostRead(pageNum, lineNum)
+
+		except KeyError:
+			print "Error: Page not found"		
+
+	# Set a post to be read at a particular line in a particular page
+	# NOTE: Page and Line are NOT index based as arguments
+	def setPostRead(self, pageNum, lineNum):
+		try:
+			self.pages[pageNum-1].setPostRead(lineNum)
+		except IndexError:
+			print "No such page exists"
+
+	# Set a post to be read at a particular line in a particular page
+	# NOTE: Page and Line are NOT index based as arguments
+	def setPostUnread(self, pageNum, lineNum):
+		try:
+			self.pages[pageNum-1].setPostUnread(lineNum)
+		except IndexError:
+			print "No such page exists"
+
+	# Checks whether the page exists
+	# NOTE: pageNum is NOT index based
+	def hasPage(self, pageNum):
+		return (pageNum-1 in range(0, len(self.pages)))	
+
+	# Checks whether book has a line on a particular page
+	# NOTE: pageNum and lineNum are NOT index based
+	def hasLine(self, pageNum, lineNum):
+		try:
+			return self.pages[pageNum-1].hasLine(lineNum)
+		except IndexError:
+			print "No such page exists"
+		
+			
+
+# This class represents a page
+# Note: a page has directory '[bookname]/[bookname]_page[pagenumber]'
+class Page(object):
+
+	def __init__(self,bookName,pageNum):
+		self.bookname = bookName
+		self.pagenum = pageNum
+		self.lines = []
+
+		# Construct the line objects
+		page_filename = self.bookname + "/" + self.bookname + "_page" + str(self.pagenum)
+		page_file = open(page_filename, 'r')
+		lineNum = 0
+		for line in page_file:
+			# Remove the trailing newline character if  any
+			line = line.rstrip()
+			lineNum = lineNum + 1
+			lineObj = Line(line, lineNum)
+			self.lines.append(lineObj)
+		self.numlines = lineNum
+
+	# Show the contents of the page with message indication on each line
+	def showPage(self):
+		pageStr = ""
+		for line in self.lines:
+			line.showLine()
+
+	# Return the contents of a line
+	# NOTE: lineNum is NOT index based
+	def getLineContent(self, lineNum):
+		return self.lines[lineNum-1].getLineContent()
+
+	# Set a post to be read at a particular line
+	# NOTE: lineNum is NOT index based
+	def setPostRead(self, lineNum):
+		try:
+			self.lines[lineNum-1].setPostRead()
+		except IndexError:
+			print "No such line exists"
+
+	# Set a post to be read at a particular line in a particular page
+	# NOTE: Page and Line are NOT index based as arguments
+	def setPostUnread(self, lineNum):
+		try:
+			self.lines[lineNum-1].setPostUnread()
+		except IndexError:
+			print "No such page exists"
+
+	# Returns whether there is a particular line number in the page
+	# NOTE: lineNum is NOT index based
+	def hasLine(self, lineNum):
+		return (lineNum-1 in range(0, len(self.lines)))
+	
+
+# This is a class that represents a line on a page
+class Line(object):
+
+	# Constants	
+	NO_POST = 0
+	UNREAD_POST = 1
+	READ_POST = 2
+
+	# Corresponding Post Characters
+	post_chars = { NO_POST: ' ', UNREAD_POST: 'n', READ_POST: 'm' }
+		
+	def __init__(self,lineStr,lineNum):
+		# Set the line number
+		self.linenum = lineNum
+
+		# Set the line content
+		# Parse the line according to the format:
+		# 3 spaces, line number, 1 space, line content
+		lineStr = lineStr.split('   ')[1]
+		lineStr = lineStr.split(' ')
+		lineStr.pop(0)
+		lineStr = ' '.join(lineStr)
+		self.linecontent = lineStr
+		
+		# Set the line post status
+		self.poststatus = self.NO_POST
+
+	# Show the contents of the page with message indication on each line
+	# with format: post status, 2 spaces, line number, 1 space, line content		
+	def showLine(self):
+		print (self.post_chars[self.poststatus] + '  ' + str(self.linenum) + ' ' + self.linecontent)
+
+	# Get the contents of the line
+	def getLineContent(self):
+		return self.linecontent
+		
+	# Set the status of forum posts on this line as 'Read'
+	def setPostRead(self):
+		self.poststatus = self.READ_POST
+
+	# Set the status of forum posts on this line as 'Unread'
+	def setPostUnread(self):
+		self.poststatus = self.UNREAD_POST
 		
 # This class represents the database for the reader
 # Contains a database dict with tuples of the post info, and post content
@@ -199,9 +422,25 @@ class ListenThread(threading.Thread):
 
 				# Accept the list of new posts
 				postComponentsList = []
-				receiveStream(postComponentsList, 'BeginNewPosts', 'PostComponentRecvd', 'EndNewPosts')
+				self.receiveStream(postComponentsList, 'BeginNewPosts', 'PostComponentRecvd', 'EndNewPosts')
 				self.processNewPosts(postComponentsList)
-		
+
+			# Server sends back a single post
+			if (data_components[1] == 'NewSinglePost'):
+
+				# Parse the post information, obtained in the format:
+				# '#NewSinglePost#PostInfoStr...|#PostContentStr...'
+				data = data.split('#NewSinglePost')
+				postInfoStr = data[1].split('|')[0]
+				postContentStr = data[1].split('|')[1]
+
+				# Insert into database
+				readerDB.insertPost(postInfoStr, postContentStr)
+
+				# Print out confirmation message
+				
+				
+						
 		sock.close()
 
 	# Process each new post in a given string list
@@ -218,7 +457,36 @@ class ListenThread(threading.Thread):
 
 		# Update all the books	
 		for bookname in books.keys():
-			books[bookname].update()	
+			books[bookname].update()
+
+	# Obtain a stream of data from server, while controlling when the client
+	# should keep receiving
+	# NOTE: Tacks on a '#' to ackPhrase to adhere to message format rules
+	def receiveStream(self, recvList, startAckPhrase, ackPhrase, endMsg):
+		
+		# Send the startAckPhrase to indicate the server can begin stream sending
+		self.socket.send('#' + startAckPhrase)
+
+		# Begin receiving the stream
+		msg = selectRecv(BUFFER_SIZE)
+		while (msg == ""):
+			msg = selectRecv(BUFFER_SIZE)
+		msgComponents = msg.split('#')
+
+		# Parse each stream message
+		while (msgComponents[1] != endMsg):
+			recvList.append(msg)
+			
+			# Send an ack that a stream message is received
+			self.socket.send('#' + ackPhrase)
+		
+			# Re-listen for a stream message
+			msg = selectRecv(BUFFER_SIZE)
+			while (msg == ""):
+				msg = selectRecv(BUFFER_SIZE)
+			msgComponents = msg.split('#')
+
+		return recvList		
 	
 
 # ----------------------------------------------------
@@ -258,65 +526,6 @@ def runDBTests():
 	print "Database:"
 	print readerDB.exportAsStr()
 
-# Display the page contents from a particular book and page number
-def displayPage(bookName, pageNum):
-	
-	# Submit a request for the contents of a page
-	reqStr = '#DisplayReq#' + str(bookName) + '#' + str(pageNum)
-	sock.send(reqStr)
-		
-	# Listen for response from server
-	listenFor('DisplayResp')
-
-	# Obtain the page contents
-	pageContents = receiveStream('BeginDisplayResp', 'DisplayRespRcvd', 'EndDisplayResp')
-
-	# Check if response contained no errors (response will contain a single error message)
-	if (len(pageContents) == 1):
-		pageContents = pageContents[0].split('#')
-		if (pageContents[1] == 'Error'):
-			return 'Error' + pageContents[2]
-
-	# No errors - print each line on the page
-	print "Book '%s', Page %s:" % (bookName, str(pageNum))
-	for pageContent in pageContents:
-		# Parse the string
-		_, linenum, linecontent = pageContent.split('#')
-
-		# Print appropriately
-		print "r  %d %s" % linenum, linecontent
-
-	return MSG_SUCCESS	
-
-# Display the posts for a particular page and line
-# Involves querying the database, given the bookName, pageNum, and lineNum
-# NOTE: The given pageNum and lineNum are NOT index based
-def displayPosts(bookName, pageNum, lineNum):
-
-	# Obtain the list of posts for the particular page and line
-	# Format: [ (postID, senderName, content, read/unread) ]
-	posts = readerDB.getPosts(bookName, pageNum, lineNum)
-
-	# Display the retrieved posts to the user
-	print "From book by %s, Page %d, Line number %d:" % (self.author, pageNum, lineNum)	
-	print '"%s"' % self.pages[pageNum-1].getLineContent(lineNum)
-	print "Displaying posts:"
-	if (len(posts) == 0):
-		print "\tNo posts to display."
-	else:
-		for post in posts:
-			postID, senderName, postcontent, readStatus = post
-
-			# Construct the string to be printed, containing the post
-			printStr = ""
-			if (readStatus == self.UNREAD_POST):
-				printStr = printStr + "[UNREAD]"
-			printStr = printStr + "\t" + str(postID) + " " + senderName + ": " + postcontent
-			print printStr
-
-			# Set the post to be read in the database
-			readerDB.setRead(postID)
-
 # Uploads a new post to the server
 def sendNewPost(postInfoStr, postContentStr):
 	newPostStr = '#UploadPost' + postInfoStr + '|' + postContentStr
@@ -339,7 +548,7 @@ def reqSyncPosts():
 	sock.send(newPostsReqStr)
 	print "Request submitted."
 
-# Send a stream of data to server, while controlling when the client
+# Send a stream of data to client, while controlling when the server
 # should continue sending. Uses the reader socket to send messages.
 # Note: Tacks on a '#' to endMsg and ackPhrase to adhere to message format rules
 def sendStream(listToSend, startMsg, startAckPhrase, ackPhrase, endMsg):
@@ -362,47 +571,8 @@ def sendStream(listToSend, startMsg, startAckPhrase, ackPhrase, endMsg):
 		while (msg != ('#' + ackPhrase)):
 			msg = selectRecv(BUFFER_SIZE)
 
-	# Send end message to indicate (toserver) end of stream
+	# Send end message to indicate (to client) end of stream
 	sock.send('#' + endMsg)
-
-# Obtain a stream of data from server
-# Returns a list of all the messages
-# NOTE: Tacks on a '#' to ackPhrase to adhere to message format rules
-def receiveStream(startAckPhrase, ackPhrase, endMsg):
-
-	recvList = []
-	
-	# Send the startAckPhrase to indicate the server can begin stream sending
-	sock.send('#' + startAckPhrase)
-
-	# Begin receiving the stream
-	msg = selectRecv(BUFFER_SIZE)
-	while (msg == ""):
-		msg = selectRecv(BUFFER_SIZE)
-	msgComponents = msg.split('#')
-
-	# Parse each stream message
-	while (msgComponents[1] != endMsg):
-		recvList.append(msg)
-		
-		# Send an ack that a stream message is received
-		sock.send('#' + ackPhrase)
-	
-		# Re-listen for a stream message
-		msg = selectRecv(BUFFER_SIZE)
-		while (msg == ""):
-			msg = selectRecv(BUFFER_SIZE)
-		msgComponents = msg.split('#')
-
-	return recvList	
-
-# Listen for a particular message from the socket
-def listenFor(listenMsgPhrase):
-	listenMsg = '#' + listenMsgPhrase
-	msg = selectRecv(BUFFER_SIZE)
-	while (msg != listenMsg):
-		msg = selectRecv(BUFFER_SIZE)
-	# Terminate waiting
 
 # Use 'select' module to obtain data from buffer
 def selectRecv(bufferSize):
@@ -431,7 +601,6 @@ currentBookname = ""
 currentPagenum = 0
 currentLinenum = 0
 reader_exit_req = False
-MSG_SUCCESS = 'OK'
 
 # Constants
 BUFFER_SIZE = 1024
@@ -455,6 +624,16 @@ for line in booklist_file:
 # Initialise Reader Database
 print "Initialising reader database..."
 readerDB = ReaderDB(booklist)
+
+# Initialise Book objects, storing them into a dict
+print "Loading books..."
+books = {}
+for book in booklist:
+	book_dir, book_author = book			# Book_dir is equivalent to book's name
+	books[book_dir] = Book(book_dir, book_author)
+	
+	# Link the book with the database
+	books[book_dir].linkDB(readerDB)
 
 # DEBUGGING
 #runDBTests()
@@ -505,18 +684,19 @@ while (not reader_exit_req):
 		if (len(user_input) < 3):
 			print "Usage: display [book_name] [page_number]"
 			continue
-		bookname = user_input[1]
-		pagenum = int(user_input[2])
-		
-		# Display the page
-		resp = displayPage(bookname, pagenum)
 
-		# Examine if display was without errors
-		if (resp == MSG_SUCCESS):
-			currentBookname = bookname
-			currentPagenum = pagenum
-		else:
-			print "Could not display page. %s" % resp
+		
+
+		book_name = user_input[1]
+		page_num = int(user_input[2])
+		try:
+			books[book_name].displayPage(page_num)
+			currentBookname = book_name
+			currentPagenumber = page_num
+
+		except KeyError:
+			print "Book name '%s' invalid" % book_name
+			continue
 
 	# Send a new post to the server
 	elif (user_input[0] == 'post_to_forum'):

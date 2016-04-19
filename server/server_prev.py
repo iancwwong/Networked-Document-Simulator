@@ -6,7 +6,6 @@ import select
 import threading
 import random
 from sys import argv
-import os
 
 # ----------------------------------------------------
 # CLASSES
@@ -31,102 +30,6 @@ class ClientObj(object):
 		print "Username: \t",self.user_name
 		print "Operation mode: \t",self.opmode
 		print "Address: \t",self.addr
-
-# This class represents a book
-class Book(object):
-
-	def __init__(self, bookName, bookAuthor):
-		self.bookname = bookName
-		self.author = bookAuthor
-		
-		# Construct the book with pages and lines
-		self.pages = []
-
-		# Determine number of pages
-		self.numpages = len([name for name in os.listdir(bookName)])
-
-		# Initialise the page objects by reading each page file
-		for pagenum in range(1,self.numpages+1):
-			pageObj = Page(bookName, pagenum)	# page numbers need an offset
-			self.pages.append(pageObj)
-
-	# Return a list of strings containing all lines in a particular page
-	# Note: Assumes pageNum starts at 1 (NOT index based)
-	def getPageContent(self,pageNum):
-
-		# Check if pagenum is valid
-		if (not self.hasPage(pageNum)):
-			errorStr = "#Error#Page %d does not exist." % (pageNum)
-			return [errorStr]
-
-		return self.pages[pageNum-1].getContent()
-
-	# Checks whether the page exists
-	# NOTE: pageNum is NOT index based
-	def hasPage(self, pageNum):
-		return (pageNum-1 in range(0, len(self.pages)))	
-
-# This class represents a page
-# Note: a page has directory '[bookname]/[bookname]_page[pagenumber]'
-class Page(object):
-
-	def __init__(self,bookName,pageNum):
-		self.bookname = bookName
-		self.pagenum = pageNum
-		self.lines = []
-
-		# Construct the line objects
-		page_filename = self.bookname + "/" + self.bookname + "_page" + str(self.pagenum)
-		page_file = open(page_filename, 'r')
-		lineNum = 0
-		for line in page_file:
-			# Remove the trailing newline character if  any
-			line = line.rstrip()
-			lineNum = lineNum + 1
-			lineObj = Line(line, lineNum)
-			self.lines.append(lineObj)
-		self.numlines = lineNum
-
-	# Retrieve the contents on the page
-	def getContent(self):
-		pageLines = []
-		for line in self.lines:
-			lineStr = '#' + str(line.linenum) + '#' + line.getContent()
-			pageLines.append(lineStr)
-		return pageLines	
-
-	# Returns whether there is a particular line number in the page
-	# NOTE: lineNum is NOT index based
-	def hasLine(self, lineNum):
-		return (lineNum-1 in range(0, len(self.lines)))
-	
-
-# This is a class that represents a line on a page
-class Line(object):
-		
-	def __init__(self,lineStr,lineNum):
-		# Set the line number
-		self.linenum = lineNum
-
-		# Set the line content
-		# Parse the line according to the format:
-		# 3 spaces, line number, 1 space, line content
-		lineStr = lineStr.split('   ')[1]
-		lineStr = lineStr.split(' ')
-		lineStr.pop(0)
-		lineStr = ' '.join(lineStr)
-		self.linecontent = lineStr
-
-		print "Line added: %d, %s" % (self.linenum, self.linecontent)
-
-	# Show the contents of the page with message indication on each line
-	# with format: post status, 2 spaces, line number, 1 space, line content		
-	def showLine(self):
-		print (self.post_chars[self.poststatus] + '  ' + str(self.linenum) + ' ' + self.linecontent)
-
-	# Get the contents of the line
-	def getContent(self):
-		return self.linecontent
 
 # This class represents the database for the server
 # ie postsDB = { "bookname": (postInfo, postContent) }
@@ -302,25 +205,6 @@ class ClientThread(threading.Thread):
 				self.listen_sockets.remove(self.client.sock)
 				self.client_stop = True
 
-			# Display request received from client
-			elif (msg_components[1] == 'DisplayReq'):
-				
-				# Load parameters
-				bookname = msg_components[2]
-				pagenum = msg_components[3]
-
-				# Obtain a list of strings to send
-				displayMsg = []
-				try:
-					displayMsg = books[bookname].getPageContent(pagenum)
-
-				except KeyError:
-					errorStr = "#Error#Book name '%s' not found." % bookname
-					displayMsg.append(errorStr)
-
-				# Send the list of strings as a stream of messages
-				self.sendStream(displayMsg, 'DisplayResp', 'BeginDisplayResp', 'DisplayRespRecvd', 'EndDisplayResp')
-
 			# Reader is uploading a new forum post
 			# '#UploadPost#PostInfo...|#PostContent...
 			elif (msg_components[1] == 'UploadPost'):
@@ -387,8 +271,7 @@ class ClientThread(threading.Thread):
 	def pushPost(self, postInfoStr, postContentStr):
 
 		# If client is not in 'push' mode, then ignore
-		if (self.client.opmode != "push"):
-			return
+		if (self.client.opmode != "push") return
 
 		# Construct the post string, and send it
 		newSinglePost = "#NewSinglePost" + postInfoStr + '|' + postContentStr
@@ -396,29 +279,28 @@ class ClientThread(threading.Thread):
 
 	# Send a stream of data to client, while controlling when the server
 	# should continue sending
-	# Note: Tacks on a '#' to all parameter messages to adhere to message formatting
+	# Note: Tacks on a '#' to endMsg and ackPhrase to adhere to message format rules
 	def sendStream(self, listToSend, startMsg, startAckPhrase, ackPhrase, endMsg):
 
 		# Send start message
 		self.client.sock.send('#' + startMsg)
 
-		# Confirm client is ready for stream receipt
-		self.listenFor('#' + startAckPhrase)
+		# Wait for an ack from client to start stream before sending stream items
+		msg = self.selectRecv(BUFFER_SIZE)
+		while (msg != ('#' + startAckPhrase)):
+			msg = self.selectRecv(BUFFER_SIZE)
 
 		# Ack received. Start sending stream
 		for listItem in listToSend:
 			self.client.sock.send(listItem)
-			self.listenFor('#' + ackPhrase)
+
+			# Wait for user acknowledgement
+			msg = self.selectRecv(BUFFER_SIZE)
+			while (msg != ('#' + ackPhrase)):
+				msg = self.selectRecv(BUFFER_SIZE)
 
 		# Send end message to indicate (to client) end of stream
 		self.client.sock.send('#' + endMsg)
-
-	# Wait for a particular message from the socket before terminating
-	# NOTE: Tacks on a '#' to adhere to format rules
-	def listenFor(self, listenMsg):
-		msg = selectRecv(BUFFER_SIZE)
-		while (msg != listenMsg):
-			msg = selectRecv(BUFFER_SIZE)
 
 	# Use 'select' module to obtain data from buffer
 	def selectRecv(self, bufferSize):
@@ -458,19 +340,8 @@ def runDBTests():
 
 	print "Database with info:"
 	print serverDB.exportAsStr()
-
-# Basic testing for books
-def runBookTests():
-
-	# Print out all the pages in each book
-	for bookname in books.keys():
-		print 'Book %s:' % bookname
-		for pageNum in range(0, books[bookname].numpages+1):
-			print "Page number %d:" % pageNum
-			print books[bookname].getPageContent(pageNum)
-			print ""
-		print ""
 	
+
 # Global Variables
 clientThreadList = []		# Maintain a list of client threads
 BUFFER_SIZE = 1024		# max message size
@@ -490,17 +361,6 @@ for line in booklist_file:
 	line = line.split(',')
 	booklist.append((line[0], line[1]))
 
-# Load the books into memory
-print "Loading books..."
-books = {}
-for book in booklist:
-	book_dir, book_author = book			# Book_dir is equivalent to book's name
-	books[book_dir] = Book(book_dir, book_author)
-
-# DEBUGGING
-runBookTests()
-exit()
-
 # Create the server database
 print "Intitialising database..."
 serverDB = ServerDB()
@@ -509,7 +369,9 @@ serverDB = ServerDB()
 print "Creating message pusher..."
 messagePusher = MessagePusher(clientThreadList)
 
-
+# DEBUGGING
+runDBTests()
+#exit()
 
 # Create the socket
 serversock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)		# TCP connection
