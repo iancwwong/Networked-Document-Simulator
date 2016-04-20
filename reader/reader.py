@@ -563,7 +563,7 @@ while (not reader_exit_req):
 		currentBookname = bookname
 		currentPagenumber = pagenum
 
-		
+		# Request new posts from same page if opmode is 'pull' mode
 
 	# Send a new post to the server
 	elif (user_input[0] == 'post_to_forum'):

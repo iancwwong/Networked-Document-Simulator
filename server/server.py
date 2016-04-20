@@ -248,9 +248,13 @@ class ServerDB(object):
 
 	# Generate a unique forum post serial ID
 	def generatePostID(self):	
-		new_post_id = random.randint(self.MIN_ID_VAL, self.MAX_ID_VAL)		
+		#new_post_id = random.randint(self.MIN_ID_VAL, self.MAX_ID_VAL)		
+		#while (new_post_id in self.post_ids):
+		#	new_post_id = random.randint(self.MIN_ID_VAL, self.MAX_ID_VAL)
+		#self.post_ids.append(new_post_id)
+		new_post_id = self.MIN_ID_VAL
 		while (new_post_id in self.post_ids):
-			new_post_id = random.randint(self.MIN_ID_VAL, self.MAX_ID_VAL)
+			new_post_id = new_post_id + 1
 		self.post_ids.append(new_post_id)
 		return new_post_id
 
@@ -361,8 +365,8 @@ class ClientThread(threading.Thread):
 					self.client.sock.send(uploadResp)
 					continue
 
-				# Send the response back to the client
-				self.client.sock.send(result)
+				# Send the success sresponse back to the client
+				self.client.sock.send('#UploadSuccess')
 
 				# Trigger the messagePusher to push the new post
 				#postInfoStr, postContentStr = serverDB.getPostAsStr(newPostID)
