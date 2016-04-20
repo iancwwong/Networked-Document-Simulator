@@ -315,8 +315,18 @@ def displayPosts(bookName, pageNum, lineNum):
 
 # Uploads a new post to the server
 def sendNewPost(postInfoStr, postContentStr):
+
+	# Use socket to send post
 	newPostStr = '#UploadPost' + postInfoStr + '|' + postContentStr
 	sock.send(newPostStr)
+
+	# Listen for response from server
+	msg = sock.recv(BUFFER_SIZE)
+	msg_components = msg.split('#')
+	if (msg_components[1] == 'Error'):
+		return 'Error: ' + msg_components[2]
+	else:
+		return MSG_SUCCESS
 
 # Request a sync between posts in readerDB and server
 def reqSyncPosts():
@@ -518,12 +528,12 @@ while (not reader_exit_req):
 			print "Usage: post_to_forum [line number] [post content]"
 			continue
 
-		# Check if book has line
-		postLine = int(user_input[1])
-		if (not books[currentBookname].hasLine(currentPagenumber, postLine)):
-			print "Line %d does not exist on page %d in book '%s'" \
-				% (postLine, currentPagenumber, currentBookname)
-			continue
+#		# Check if book has line
+#		postLine = int(user_input[1])
+#		if (not books[currentBookname].hasLine(currentPagenumber, postLine)):
+#			print "Line %d does not exist on page %d in book '%s'" \
+#				% (postLine, currentPagenumber, currentBookname)
+#			continue
 	
 		# Construct the post content string
 		postContent = ' '.join(user_input[2:])	
@@ -531,14 +541,18 @@ while (not reader_exit_req):
 		# Create the two strings for the post:
 		# postInfoString: 	'#NewPostInfo#SenderName#BookName#PageNumber#LineNumber'
 		# postContentString: 	'#NewPostContent#Content'
-		# NOTE: By default, the read status of a post composed by this client
-		#       is 'READ'
 		postInfoStr = "#NewPostInfo#" + user_name + "#" + currentBookname + "#" \
 				+ str(currentPagenumber) + "#" + str(postLine)
 		postContentStr = "#NewPostContent#" + postContent
 
 		print "Posting to forum..."
-		sendNewPost(postInfoStr, postContentStr)
+		resp = sendNewPost(postInfoStr, postContentStr)
+		
+		# Examine if post was successfully posted
+		if (resp == MSG_SUCCESS):
+			print "Successfully posted!"
+		else:
+			print "Could not post. %s" % resp
 
 
 	# Display the posts for a particular line number on the current book and page
