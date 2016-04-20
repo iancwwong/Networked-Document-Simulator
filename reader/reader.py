@@ -185,13 +185,18 @@ class ListenThread(threading.Thread):
 
 			# Server is returning a stream of new posts
 			# Patiently receive the stream of strings from server
-			if (data_components[1] == 'NewPosts'):
+			if (data_components[1] == 'NewSinglePost'):
 
-				# Accept the list of new posts
-				postComponentsList = []
-				receiveStream(postComponentsList, 'BeginNewPosts', 'PostComponentRecvd', 'EndNewPosts')
-				self.processNewPosts(postComponentsList)
-		
+				# Accept the new post
+				postInfoStr = data.split('#NewSinglePost')[1].split('|')[0]
+				postContentStr = data.split('#NewSinglePost')[1].split('|')[1]
+
+				print "Strings to insert:"
+				print postInfoStr
+				print postContentStr
+				readerDB.insertPost(postInfoStr, postContentStr)
+				print "Successfully inserted new post!"
+				
 		sock.close()
 
 	# Process each new post in a given string list
@@ -402,7 +407,7 @@ def syncAllPosts():
 	syncReqStr = '#SyncPostsReq#'
 	for i in range(0,len(postIDs)):
 		syncReqStr = syncReqStr + str(postIDs[i])
-		if (i < len(unknownPostIDs)-1):
+		if (i < len(postIDs)-1):
 			syncReqStr = syncReqStr + ','
 	sock.send(syncReqStr)
 	
@@ -414,9 +419,8 @@ def syncAllPosts():
 	
 	# Extract the list of ID's that reader does NOT have (that server has)
 	unknownPostIDs = resp.split('#SyncPostsResp#')[1].split(',')
-	print unknownPostIDs
 
-	if (len(unknownPostIDs)==0):
+	if (len(unknownPostIDs) == 1 and unknownPostIDs[0] == ''):
 		print "Database up to date!"
 		return MSG_SUCCESS
 
@@ -576,15 +580,15 @@ except socket.error, e:
 	exit()
 print "Successfully connected to server!"
 
-# Start the listening thread
-print "Starting listening thread..."
-listenThread = ListenThread(sock)
-listenThread.start()
-
 # Send intro message with info about this client
 intro_message = "#Intro#" + user_name + "#" + opmode + "#" + str(poll_interval)
 sock.send(intro_message)
 print "Sent message: ", intro_message
+
+# Start the listening thread
+print "Starting listening thread..."
+listenThread = ListenThread(sock)
+listenThread.start()
 
 # Run the reader
 commands = ['exit', 'help', 'display', 'post_to_forum', 'read_post']

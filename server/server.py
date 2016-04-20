@@ -231,6 +231,25 @@ class ServerDB(object):
 			errorStr = "No such postID exists."
 			return (self.OP_FAILURE, errorStr)
 
+	# Return a formatted version of a post, in the format:
+	# postString:		'postInfoString...|postContentString
+	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
+	# postContentString: 	'#PostContent#Id#Content'
+	def getPostAsStr(self, postID):
+		try:
+			postInfo, postContent = self.db[postID]
+			sender, bookname, page, line = postInfo
+			postInfoStr = '#PostInfo#' + str(postID) + '#' + sender + '#' + \
+					bookname + '#' + str(page) + '#' + str(line)
+			postContentStr = '#PostContent#' + str(postID) + '#' + postContent
+			postDataStr = postInfoStr + '|' + postContentStr
+			return (self.OP_SUCCESS, postDataStr)
+
+		except KeyError:
+			errorStr = "No such postID exists."
+			return (self.OP_FAILURE, errorStr)
+
+
 	# Return a list of ALL the post id's in the database
 	def getAllPostIDs(self):
 		return self.db.keys()
@@ -271,9 +290,9 @@ class MessagePusher(object):
 		self.clientThreads = clientThreads
 
 	# Push a forum post
-	def pushPost(self, postInfoStr, postContentStr):
-		for thread in clientThreads:
-			thread.pushPost(postInfoStr, postContentStr)
+	def pushPost(self, postDataStr):
+		for thread in self.clientThreads:
+			thread.pushPost(postDataStr)
 
 # This is the thread that is executed when a server serves a single client
 class ClientThread(threading.Thread):
@@ -373,8 +392,8 @@ class ClientThread(threading.Thread):
 				self.client.sock.send('#UploadSuccess')
 
 				# Trigger the messagePusher to push the new post
-				#postInfoStr, postContentStr = serverDB.getPostAsStr(newPostID)
-				#messagePusher.pushPost(postInfoStr, postContentStr)
+				resp, dataStr = serverDB.getPostAsStr(int(result))
+				messagePusher.pushPost(dataStr)
 
 			# Posts Request message received (to obtain post IDs for a particular book/page), in the format:
 			# '#GetPostsIDReq#[bookname]#[pagenum]'
@@ -409,7 +428,6 @@ class ClientThread(threading.Thread):
 				
 				# Extract the information given
 				postIDs = data.split('#GetPostsReq#')[1].split(',')
-				print postIDs
 				if (len(postIDs) > 0 and postIDs[0] != ''):
 					postIDs = [ int(postID) for postID in postIDs ]
 
@@ -421,7 +439,7 @@ class ClientThread(threading.Thread):
 				# postContentString: 	'#PostContent#Id#Content'
 				postStrings = []
 				for postID in postIDs:
-					resp, result = serverDB.getPost(postID)
+					resp, result = serverDB.getPostAsStr(postID)
 
 					# Error obtaining post - report it
 					if (resp == serverDB.OP_FAILURE):
@@ -429,14 +447,8 @@ class ClientThread(threading.Thread):
 						postStrings.append(errorStr)
 						continue
 
-					# Convert postInfo and postContent into a formatted string for sending
-					postInfo, postContent = result
-					sender, bookname, page, line = postInfo
-					postInfoStr = '#PostInfo#' + str(postID) + '#' + sender + '#' + \
-							bookname + '#' + str(page) + '#' + str(line)
-					postContentStr = '#PostContent#' + str(postID) + '#' + postContent
-					postDataStr = postInfoStr + '|' + postContentStr
-					postStrings.append(postDataStr)
+					# Send the post string to client
+					postStrings.append(result)
 
 				# Send all the posts as a stream
 				self.sendStream(postStrings, 'GetPostsResp', 'BeginGetPostsResp', 'PostRcvd',  'EndGetPostsResp')				
@@ -455,7 +467,6 @@ class ClientThread(threading.Thread):
 				
 				# Obtain the list of id's that client does not have
 				unknownPostIDs = [ postID for postID in serverPostIDs if postID not in clientPostIDs ]
-				print "unknown id's:", unknownPostIDs
 
 				# Construct and send the response string
 				respStr = "#SyncPostsResp#"
@@ -473,17 +484,17 @@ class ClientThread(threading.Thread):
 		self.client.sock.close()
 
 	# Send a single post to the client
+	# postDataStr: postInfoStr...'|postContentStr...
 	# postInfoStr: '#PostInfo#[postID]#[sender]#[bookname]#[page]#[line]'
 	# postContentStr: '#PostContent#[postID]#[post content]'
-	def pushPost(self, postInfoStr, postContentStr):
+	def pushPost(self, postDataStr):
 
 		# If client is not in 'push' mode, then ignore
 		if (self.client.opmode != "push"):
 			return
 
-		# Construct the post string, and send it
-		newSinglePost = "#NewSinglePost" + postInfoStr + '|' + postContentStr
-		self.client.sock.send(newSinglePost)
+		self.client.sock.send("#NewSinglePost" + postDataStr)
+		print "Pushed message to client."
 
 	# Send a stream of data to client, while controlling when the server
 	# should continue sending
