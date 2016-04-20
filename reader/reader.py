@@ -24,16 +24,11 @@ class ReaderDB(object):
 	# Constants
 	UNREAD = 1
 	READ = 2
-	
-	# Storing forum posts for each book
-	db = {}
 
-	# Constructor, given the parsed information from the 'booklist' file
-	def __init__(self, booklist):
-		# Initialise the dicts
-		for book in booklist:
-			bookname, bookauthor = book
-			self.db[bookname] = {}
+	# Constructor
+	def __init__(self):
+		# Storing forum posts for each book
+		self.db = {}
 
 	# Insert a new post, given two strings:
 	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
@@ -275,16 +270,17 @@ def displayPage(bookName, pageNum):
 	if (len(pageContents) == 1):
 		pageContents = pageContents[0].split('#')
 		if (pageContents[1] == 'Error'):
-			return 'Error' + pageContents[2]
+			return ('Error: ' + pageContents[2])
 
 	# No errors - print each line on the page
 	print "Book '%s', Page %s:" % (bookName, str(pageNum))
 	for pageContent in pageContents:
 		# Parse the string
 		_, linenum, linecontent = pageContent.split('#')
+		linenum = int(linenum)
 
 		# Print appropriately
-		print "r  %d %s" % linenum, linecontent
+		print "r  %d %s" % (linenum, linecontent)
 
 	return MSG_SUCCESS	
 
@@ -393,20 +389,19 @@ def receiveStream(startAckPhrase, ackPhrase, endMsg):
 		while (msg == ""):
 			msg = selectRecv(BUFFER_SIZE)
 		msgComponents = msg.split('#')
-
 	return recvList	
 
 # Listen for a particular message from the socket
-def listenFor(listenMsgPhrase):
-	listenMsg = '#' + listenMsgPhrase
+def listenFor(listenMsg):
 	msg = selectRecv(BUFFER_SIZE)
-	while (msg != listenMsg):
+	while (msg != '#' + listenMsg):
 		msg = selectRecv(BUFFER_SIZE)
 	# Terminate waiting
 
 # Use 'select' module to obtain data from buffer
 def selectRecv(bufferSize):
-	read_sockets, write_sockets, error_sockets = select.select([sock], [], [])
+	listen_sockets = [sock]
+	read_sockets, write_sockets, error_sockets = select.select(listen_sockets, [], [])
 	for rs in read_sockets:
 		if (rs == sock):
 			data = sock.recv(bufferSize)
@@ -443,18 +438,9 @@ print "At port: \t", server_port
 print "Mode: \t\t",opmode
 print "Poll interval: \t",poll_interval
 
-# Parse information about the books contained in the 'booklist' file
-# with format: [book folder name],[book author]
-booklist_file = open('booklist','r').read().split('\n')
-booklist_file.remove('')
-booklist = []
-for line in booklist_file:
-	line = line.split(',')
-	booklist.append((line[0], line[1]))
-
 # Initialise Reader Database
 print "Initialising reader database..."
-readerDB = ReaderDB(booklist)
+readerDB = ReaderDB()
 
 # DEBUGGING
 #runDBTests()
@@ -472,13 +458,14 @@ except socket.error, e:
 print "Successfully connected to server!"
 
 # Start the listening thread
-print "Starting listening thread..."
-listenThread = ListenThread(sock)
-listenThread.start()
+#print "Starting listening thread..."
+#listenThread = ListenThread(sock)
+#listenThread.start()
 
 # Send intro message with info about this client
 intro_message = "#Intro#" + user_name + "#" + opmode + "#" + str(poll_interval)
 sock.send(intro_message)
+print "Sent message: ", intro_message
 
 # Run the reader
 commands = ['exit', 'help', 'display', 'post_to_forum', 'read_post']
@@ -582,5 +569,5 @@ while (not reader_exit_req):
 
 # close the connection
 print "Shutting down reader..."
-listenThread.event.set()
+#listenThread.event.set()
 print "Exiting..."

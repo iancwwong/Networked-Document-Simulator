@@ -117,8 +117,6 @@ class Line(object):
 		lineStr = ' '.join(lineStr)
 		self.linecontent = lineStr
 
-		print "Line added: %d, %s" % (self.linenum, self.linecontent)
-
 	# Show the contents of the page with message indication on each line
 	# with format: post status, 2 spaces, line number, 1 space, line content		
 	def showLine(self):
@@ -294,7 +292,11 @@ class ClientThread(threading.Thread):
 				client_user_name = msg_components[2]
 				client_opmode = msg_components[3]
 				self.client.user_name = client_user_name
-				self.client.opmode = client_opmode		
+				self.client.opmode = client_opmode
+		
+				print "Client details received."
+				print "Username: ",self.client.user_name
+				print "Opmode: ",self.client.opmode	
 
 			# Clean exit message received
 			elif (msg_components[1] == "Exit"):
@@ -304,10 +306,11 @@ class ClientThread(threading.Thread):
 
 			# Display request received from client
 			elif (msg_components[1] == 'DisplayReq'):
-				
+			
 				# Load parameters
 				bookname = msg_components[2]
-				pagenum = msg_components[3]
+				pagenum = int(msg_components[3])
+				print "Client requested to print page %d from %s." % (pagenum, bookname)
 
 				# Obtain a list of strings to send
 				displayMsg = []
@@ -319,7 +322,8 @@ class ClientThread(threading.Thread):
 					displayMsg.append(errorStr)
 
 				# Send the list of strings as a stream of messages
-				self.sendStream(displayMsg, 'DisplayResp', 'BeginDisplayResp', 'DisplayRespRecvd', 'EndDisplayResp')
+				print "Sending display stream..."
+				self.sendStream(displayMsg, 'DisplayResp', 'BeginDisplayResp', 'DisplayRespRcvd', 'EndDisplayResp')
 
 			# Reader is uploading a new forum post
 			# '#UploadPost#PostInfo...|#PostContent...
@@ -375,8 +379,7 @@ class ClientThread(threading.Thread):
 				
 			else:
 				# Unknown type of message
-				reply_msg = "Invalid message."
-				rsock.send(reply_msg)
+				reply_msg = "Invalid message: ", data
 
 		# Close the socket
 		self.client.sock.close()
@@ -403,12 +406,12 @@ class ClientThread(threading.Thread):
 		self.client.sock.send('#' + startMsg)
 
 		# Confirm client is ready for stream receipt
-		self.listenFor('#' + startAckPhrase)
+		self.listenFor(startAckPhrase)
 
 		# Ack received. Start sending stream
 		for listItem in listToSend:
 			self.client.sock.send(listItem)
-			self.listenFor('#' + ackPhrase)
+			self.listenFor(ackPhrase)
 
 		# Send end message to indicate (to client) end of stream
 		self.client.sock.send('#' + endMsg)
@@ -416,9 +419,10 @@ class ClientThread(threading.Thread):
 	# Wait for a particular message from the socket before terminating
 	# NOTE: Tacks on a '#' to adhere to format rules
 	def listenFor(self, listenMsg):
-		msg = selectRecv(BUFFER_SIZE)
-		while (msg != listenMsg):
-			msg = selectRecv(BUFFER_SIZE)
+		msg = self.selectRecv(BUFFER_SIZE)		
+		while (msg != ('#' + listenMsg)):
+			msg = self.selectRecv(BUFFER_SIZE)
+			
 
 	# Use 'select' module to obtain data from buffer
 	def selectRecv(self, bufferSize):
@@ -498,8 +502,8 @@ for book in booklist:
 	books[book_dir] = Book(book_dir, book_author)
 
 # DEBUGGING
-runBookTests()
-exit()
+#runBookTests()
+#exit()
 
 # Create the server database
 print "Intitialising database..."
@@ -508,8 +512,6 @@ serverDB = ServerDB()
 # Create the messagePusher object
 print "Creating message pusher..."
 messagePusher = MessagePusher(clientThreadList)
-
-
 
 # Create the socket
 serversock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)		# TCP connection
