@@ -247,6 +247,9 @@ class ReaderDB(object):
 	# Constants
 	UNREAD = 1
 	READ = 2
+
+	# Corresponding Post Characters
+	post_chars = { NO_POST: ' ', UNREAD_POST: 'n', READ_POST: 'm' }
 	
 	# Storing forum posts for each book
 	db = {}

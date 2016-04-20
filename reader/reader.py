@@ -27,6 +27,9 @@ class ReaderDB(object):
 	UNREAD = 0
 	READ = 1
 
+	# Corresponding Post Characters
+	post_status_chars = { -1: ' ', 0: 'n', 1: 'm' }
+
 	# Constructor
 	def __init__(self):
 		# Storing forum posts for each book
@@ -109,9 +112,25 @@ class ReaderDB(object):
 	def getAllPostIDs(self):
 		return self.db.keys()
 
-	# Send a list of post statuses at a specific book, on pages and lines
-	# Format: [ (status, pagenum, linenum) ]
-	#def getBookPostStatuses(self, bookname):
+	# Gets a single character corresponding to whether a particular line (in a book/page)
+	# contains read / unread posts, or nothing otherwise.
+	def consultPostsStatus(self, bookname, pagenum, linenum):
+		
+		postIDs = self.getPostIDs(bookname, pagenum, linenum)
+	
+		# Check if list is empty
+		if (len(postIDs) == 0):
+			return self.post_status_chars[-1]
+
+		# Check if there are any unread posts
+		for postID in postIDs:
+			postInfo, _ = self.getPost(postID)
+			_, _, _, _, status = postInfo
+			if (status == self.UNREAD):
+				return self.post_status_chars[self.UNREAD]
+		
+		# At this point, all messages are read
+		return self.post_status_chars[self.READ]
 
 	# Return a list of post ID's for a particular book, page, and line
 	def getPostIDs(self, bookName, pageNum, lineNum):
@@ -237,10 +256,13 @@ def displayPage(bookName, pageNum):
 	for pageContent in pageContents:
 		# Parse the string
 		_, linenum, linecontent = pageContent.split('#')
-		linenum = int(linenum)
+		lineNum = int(linenum)
+
+		# Determine whether any posts are read/unread on this line
+		linePostsStatus = readerDB.consultPostsStatus(bookName, pageNum, lineNum)
 
 		# Print appropriately
-		print "r  %d %s" % (linenum, linecontent)
+		print "%c  %d %s" % (linePostsStatus, lineNum, linecontent)
 
 	return MSG_SUCCESS	
 
@@ -414,7 +436,7 @@ readerDB = ReaderDB()
 
 # DEBUGGING
 runDBTests()
-exit()
+#exit()
 
 # Prepare the socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)	# TCP
