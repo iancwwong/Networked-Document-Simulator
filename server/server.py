@@ -368,9 +368,9 @@ class ClientThread(threading.Thread):
 				#postInfoStr, postContentStr = serverDB.getPostAsStr(newPostID)
 				#messagePusher.pushPost(postInfoStr, postContentStr)
 
-			# Posts Request message received (to obtain posts for a particular book/page), in the format:
-			# '#PostsReq#[bookname]#[pagenum]'
-			elif (msg_components[1] == 'PostsReq'):
+			# Posts Request message received (to obtain post IDs for a particular book/page), in the format:
+			# '#GetPostsIDReq#[bookname]#[pagenum]'
+			elif (msg_components[1] == 'GetPostsIDReq'):
 
 				# Extract information given
 				print "Query for new posts received from %s!" % self.client.user_name
@@ -388,7 +388,7 @@ class ClientThread(threading.Thread):
 
 				# Construct the response string, and send to client
 				postsIDs = result
-				postsRespStr = "#PostsResp#"
+				postsRespStr = "#GetPostsIDResp#"
 				for i in range(0, len(postsIDs)):
 					postsRespStr = postsRespStr + str(postsIDs[i])
 					if (i < len(postsIDs) - 1):

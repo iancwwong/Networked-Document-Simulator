@@ -284,7 +284,7 @@ def updateLocalPosts(bookname, pagenum):
 	
 	# Request for a list of postID's that are associated with the bookname 
 	# and page number
-	reqStr = "#PostsReq#" + bookname + '#' + str(pagenum)
+	reqStr = "#GetPostsIDReq#" + bookname + '#' + str(pagenum)
 	sock.send(reqStr)
 
 	# Listen for response from server
@@ -295,7 +295,7 @@ def updateLocalPosts(bookname, pagenum):
 		return 'Error: ' + msg_components[2]
 
 	# Check correct message received
-	if (msg_components[1] != 'PostsResp'):
+	if (msg_components[1] != 'GetPostsIDResp'):
 		return "Wrong message received."
 	
 	# Extract list of postID's that are sent from server
