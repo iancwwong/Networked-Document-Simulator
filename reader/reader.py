@@ -35,7 +35,7 @@ class ReaderDB(object):
 	# Insert a new post, given two strings:
 	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
 	# postContentString: 	'#PostContent#Id#Content' 
-	# NOTE: postID is interpreted as an int (NOT a string)
+	# NOTE: postID, pagenumber, and linenumber are interpreted as ints (NOT strings)
 	def insertPost(self, postInfoStr, postContentStr):
 
 		# Parse the given strings
@@ -89,14 +89,6 @@ class ReaderDB(object):
 		except:
 			print "Error: No such post with id %d found." % readPostID
 
-	# Send a list of post statuses at a specific book, on pages and lines
-	# Format: [ (status, pagenum, linenum) ]
-	#def getBookPostStatuses(self, bookname):
-
-	# Return a list of posts for a particular book, page, and line
-	# Format: [ (postID, senderName, postcontent, read/unread) ]
-	#def getPosts(self, bookName, pageNum, lineNum):
-
 	# Export db as a string
 	# Post ID [id]:
 	# Info: [sender], [bookname], [pagenum], [linenum], [readstatus]
@@ -116,6 +108,22 @@ class ReaderDB(object):
 	# Obtains a list of post ID's in the entire database
 	def getAllPostIDs(self):
 		return self.db.keys()
+
+	# Send a list of post statuses at a specific book, on pages and lines
+	# Format: [ (status, pagenum, linenum) ]
+	#def getBookPostStatuses(self, bookname):
+
+	# Return a list of post ID's for a particular book, page, and line
+	def getPostIDs(self, bookName, pageNum, lineNum):
+
+		# Loop through all posts, returning the ones that match the condition
+		idList = []
+		for postID in self.db.keys():
+			postInfo, _ = self.getPost(postID)
+			_, bookname, page, line, _ = postInfo
+			if (bookname == bookName and page == pageNum and line == lineNum):
+				idList.append(postID)				
+		return idList
 		
 
 # This class is the thread that runs when reader is listening for input from server
@@ -198,6 +206,12 @@ def runDBTests():
 	readerDB.setRead(5699)
 	print "Database:"
 	print readerDB.exportAsStr()
+	print ""
+
+	print readerDB.getPostIDs('shelley', 2, 9)
+	print ""
+
+	displayPosts('shelley', 2, 9)
 
 # Display the page contents from a particular book and page number
 def displayPage(bookName, pageNum):
@@ -230,34 +244,34 @@ def displayPage(bookName, pageNum):
 
 	return MSG_SUCCESS	
 
-# Display the posts for a particular page and line
+# Display the posts for a particular book, page, and line
 # Involves querying the database, given the bookName, pageNum, and lineNum
 # NOTE: The given pageNum and lineNum are NOT index based
 def displayPosts(bookName, pageNum, lineNum):
 
-	# Obtain the list of posts for the particular page and line
-	# Format: [ (postID, senderName, content, read/unread) ]
-	posts = readerDB.getPosts(bookName, pageNum, lineNum)
+	print "Displaying posts:"
+
+	# Obtain the list of post ids for the particular page and line
+	postids = readerDB.getPostIDs(bookName, pageNum, lineNum)
 
 	# Display the retrieved posts to the user
-	print "From book by %s, Page %d, Line number %d:" % (self.author, pageNum, lineNum)	
-	print '"%s"' % self.pages[pageNum-1].getLineContent(lineNum)
-	print "Displaying posts:"
-	if (len(posts) == 0):
+	print "-> From book '%s', Page %d, Line number %d:" % (bookName, pageNum, lineNum)
+	if (len(postids) == 0):
 		print "\tNo posts to display."
 	else:
-		for post in posts:
-			postID, senderName, postcontent, readStatus = post
+		for postid in postids:
+			postInfo, postContent = readerDB.getPost(postid)
+			senderName, _, _, _, readStatus = postInfo
 
 			# Construct the string to be printed, containing the post
 			printStr = ""
-			if (readStatus == self.UNREAD_POST):
+			if (readStatus == readerDB.UNREAD):
 				printStr = printStr + "[UNREAD]"
-			printStr = printStr + "\t" + str(postID) + " " + senderName + ": " + postcontent
+			printStr = printStr + "\t" + str(postid) + " " + senderName + ": " + postContent
 			print printStr
 
 			# Set the post to be read in the database
-			readerDB.setRead(postID)
+			readerDB.setRead(postid)
 
 # Uploads a new post to the server
 def sendNewPost(postInfoStr, postContentStr):
@@ -514,7 +528,7 @@ while (not reader_exit_req):
 			continue
 
 		# Display posts at the current book, page, and line
-		books[currentBookname].displayPosts(currentPagenumber, postsLine)
+		displayPosts(currentBookname, currentPagenumber, postsLine)
 
 	# Update the database with server
 	elif (user_input[0] == 'serversync'):
