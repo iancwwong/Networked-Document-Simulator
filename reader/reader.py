@@ -392,6 +392,68 @@ def sendNewPost(postInfoStr, postContentStr):
 		print "Successfully posted!"
 		return MSG_SUCCESS
 
+# Syncs ALL posts from this reader with server
+def syncAllPosts():
+	
+	# Get the list of current posts this reader has
+	postIDs = readerDB.getAllPostIDs()
+	
+	# Construct string to send
+	syncReqStr = '#SyncPostsReq#'
+	for i in range(0,len(postIDs)):
+		syncReqStr = syncReqStr + str(postIDs[i])
+		if (i < len(unknownPostIDs)-1):
+			syncReqStr = syncReqStr + ','
+	sock.send(syncReqStr)
+	
+	# Wait for server response
+	resp = sock.recv(BUFFER_SIZE)
+	if (resp.split('#')[1] != 'SyncPostsResp'):
+		print "Wrong message obtained."
+		return
+	
+	# Extract the list of ID's that reader does NOT have (that server has)
+	unknownPostIDs = resp.split('#SyncPostsResp#')[1].split(',')
+	print unknownPostIDs
+
+	if (len(unknownPostIDs)==0):
+		print "Database up to date!"
+		return MSG_SUCCESS
+
+	# Download the posts for each of these unknown post ID's'
+	# Construct the string to send to server
+	downloadReqStr = "#GetPostsReq#"
+	for i in range(0, len(unknownPostIDs)):
+		downloadReqStr = downloadReqStr + str(unknownPostIDs[i])
+		if (i < len(unknownPostIDs) - 1):
+			downloadReqStr = downloadReqStr + ','
+	sock.send(downloadReqStr)
+
+	# Listen for server response
+	listenFor('GetPostsResp')
+	
+	# Receive the new posts as a stream
+	# Each post will be of format:
+	# '#PostInfo...|#PostContent'
+	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
+	# postContentString: 	'#PostContent#Id#Content'
+	newPosts = receiveStream('BeginGetPostsResp', 'PostRcvd', 'EndGetPostsResp')
+
+	# Insert each post into the database
+	for post in newPosts:
+		# Check for error
+		post_components = post.split('#')
+		if (post_components[1] == 'Error'):
+			print 'Error: ' + post_components[2]
+			continue
+
+		postInfoString = post.split('|')[0]
+		postContentString = post.split('|')[1]
+		readerDB.insertPost(postInfoString, postContentString)
+	print "Database updated!"
+
+	return MSG_SUCCESS
+	
 # Send a stream of data to server, while controlling when the client
 # should continue sending. Uses the reader socket to send messages.
 # Note: Tacks on a '#' to endMsg and ackPhrase to adhere to message format rules
@@ -515,9 +577,9 @@ except socket.error, e:
 print "Successfully connected to server!"
 
 # Start the listening thread
-#print "Starting listening thread..."
-#listenThread = ListenThread(sock)
-#listenThread.start()
+print "Starting listening thread..."
+listenThread = ListenThread(sock)
+listenThread.start()
 
 # Send intro message with info about this client
 intro_message = "#Intro#" + user_name + "#" + opmode + "#" + str(poll_interval)
@@ -618,13 +680,8 @@ while (not reader_exit_req):
 
 	# Update the database with server
 	elif (user_input[0] == 'serversync'):
-		
-		# Check if currentBookname/cuirrentPagenum is initialised
-		if (currentBookname == "" or currentPagenumber == 0):
-			print "Uncertain book and page. Use the command 'display' to initialise."
-			continue
 
-		resp = updateLocalPosts(currentBookname, currentPagenumber)
+		resp = syncAllPosts()
 
 		# Examine if posts were successfully updated
 		if (resp != MSG_SUCCESS):
@@ -636,5 +693,5 @@ while (not reader_exit_req):
 
 # close the connection
 print "Shutting down reader..."
-#listenThread.event.set()
+listenThread.event.set()
 print "Exiting..."

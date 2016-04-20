@@ -209,7 +209,7 @@ class ServerDB(object):
 		return (self.OP_SUCCESS, new_post_id)
 
 	# Return a list of post IDs for a particular book and page
-	def getPosts(self, bookName, pageNum):
+	def getPostsID(self, bookName, pageNum):
 
 		# Loop through all posts, adding those that match the criteria to the final list
 		postIDs = []
@@ -230,6 +230,10 @@ class ServerDB(object):
 		except KeyError:
 			errorStr = "No such postID exists."
 			return (self.OP_FAILURE, errorStr)
+
+	# Return a list of ALL the post id's in the database
+	def getAllPostIDs(self):
+		return self.db.keys()
 
 	# Export db as a string
 	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
@@ -382,7 +386,7 @@ class ClientThread(threading.Thread):
 				pageNum = int(msg_components[3])
 
 				# Get a list of all post ID's for the associated page/book,
-				resp, result = serverDB.getPosts(bookName, pageNum)
+				resp, result = serverDB.getPostsID(bookName, pageNum)
 
 				# Check if any errors retrieving post ids
 				if (resp == serverDB.OP_FAILURE):
@@ -405,7 +409,9 @@ class ClientThread(threading.Thread):
 				
 				# Extract the information given
 				postIDs = data.split('#GetPostsReq#')[1].split(',')
-				postIDs = [ int(postID) for postID in postIDs ]
+				print postIDs
+				if (len(postIDs) > 0 and postIDs[0] != ''):
+					postIDs = [ int(postID) for postID in postIDs ]
 
 				# Construct the list of strings to send back (ie translating
 				# all the posts given by their id's into formatted strings
@@ -434,7 +440,31 @@ class ClientThread(threading.Thread):
 
 				# Send all the posts as a stream
 				self.sendStream(postStrings, 'GetPostsResp', 'BeginGetPostsResp', 'PostRcvd',  'EndGetPostsResp')				
+			
+			# [Client push mode] Request for ALL post ID's that client does NOT have, received int he format:
+			# '#PostsSyncReq#[Postid],[Postid]...'
+			elif (msg_components[1] == 'SyncPostsReq'):
 				
+				# Extract the list of postID's that client has
+				clientPostIDs = data.split('#SyncPostsReq#')[1].split(',')
+				if (len(clientPostIDs) > 0 and clientPostIDs[0] != ''):
+					clientPostIDs = [ int(postID) for postID in clientPostIDs ]
+			
+				# Get the list of id's that are in the server's DB
+				serverPostIDs = serverDB.getAllPostIDs()
+				
+				# Obtain the list of id's that client does not have
+				unknownPostIDs = [ postID for postID in serverPostIDs if postID not in clientPostIDs ]
+				print "unknown id's:", unknownPostIDs
+
+				# Construct and send the response string
+				respStr = "#SyncPostsResp#"
+				for i in range(0,len(unknownPostIDs)):
+					respStr = respStr + str(unknownPostIDs[i])
+					if (i < len(unknownPostIDs)-1):
+						respStr = respStr + ','
+				self.client.sock.send(respStr)
+	
 			else:
 				# Unknown type of message
 				reply_msg = "Invalid message: ", data
