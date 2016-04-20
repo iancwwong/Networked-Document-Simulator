@@ -327,9 +327,6 @@ def updateLocalPosts(bookname, pagenum):
 	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
 	# postContentString: 	'#PostContent#Id#Content'
 	newPosts = receiveStream('BeginGetPostsResp', 'PostRcvd', 'EndGetPostsResp')
-	print "New posts received: ", newPosts
-
-	# Check for any errors
 
 	# Insert each post into the database
 	for post in newPosts:
@@ -379,6 +376,8 @@ def displayPosts(bookName, pageNum, lineNum):
 
 # Uploads a new post to the server
 def sendNewPost(postInfoStr, postContentStr):
+	
+	print "Submitting the post..."
 
 	# Use socket to send post
 	newPostStr = '#UploadPost' + postInfoStr + '|' + postContentStr
@@ -390,6 +389,7 @@ def sendNewPost(postInfoStr, postContentStr):
 	if (msg_components[1] == 'Error'):
 		return 'Error: ' + msg_components[2]
 	else:
+		print "Successfully posted!"
 		return MSG_SUCCESS
 
 # Send a stream of data to server, while controlling when the client
@@ -556,11 +556,14 @@ while (not reader_exit_req):
 		resp = displayPage(bookname, pagenum)
 
 		# Examine if display was without errors
-		if (resp == MSG_SUCCESS):
-			currentBookname = bookname
-			currentPagenumber = pagenum
-		else:
+		if (resp != MSG_SUCCESS):
 			print "Could not display page. %s" % resp
+			continue
+
+		currentBookname = bookname
+		currentPagenumber = pagenum
+
+		
 
 	# Send a new post to the server
 	elif (user_input[0] == 'post_to_forum'):
@@ -592,14 +595,11 @@ while (not reader_exit_req):
 				+ str(currentPagenumber) + "#" + str(postLine)
 		postContentStr = "#NewPostContent#" + postContent
 
-		print "Posting to forum..."
 		resp = sendNewPost(postInfoStr, postContentStr)
 		
 		# Examine if post was successfully posted
-		if (resp == MSG_SUCCESS):
-			print "Successfully posted!"
-		else:
-			print "Could not post. %s" % resp
+		if (resp != MSG_SUCCESS):
+			print "Could not post. %s" % resp			
 
 	# Display the posts for a particular line number on the current book and page
 	elif (user_input[0] == 'read_post'):
