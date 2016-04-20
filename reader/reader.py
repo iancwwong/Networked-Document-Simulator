@@ -369,7 +369,9 @@ def displayPosts(bookName, pageNum, lineNum):
 			printStr = ""
 			if (readStatus == readerDB.UNREAD):
 				printStr = printStr + "[UNREAD]"
-			printStr = printStr + "\t" + str(postid) + " " + senderName + ": " + postContent
+			else:
+				printStr = printStr + "        "
+			printStr = printStr + " " + str(postid) + " " + senderName + ": " + postContent
 			print printStr
 
 			# Set the post to be read in the database
