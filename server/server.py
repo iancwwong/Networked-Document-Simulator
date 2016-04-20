@@ -66,6 +66,11 @@ class Book(object):
 	def hasPage(self, pageNum):
 		return (pageNum-1 in range(0, len(self.pages)))	
 
+	# Returns a page object given a specific page number
+	# NOTE: page number is NOT index based
+	def getPageObj(self, pageNum):
+		return self.pages[pageNum-1]
+
 # This class represents a page
 # Note: a page has directory '[bookname]/[bookname]_page[pagenumber]'
 class Page(object):
@@ -167,6 +172,18 @@ class ServerDB(object):
 		linenum = int(postInfoString[5])
 		postcontent = postContentString[2]
 
+		# Check if post information is valid - ie bookname, pagenum, and linenum
+		try:
+			if (not books[bookname].hasPage(pagenum)):
+				errorStr = '#Error#' + "Page '" + str(pagenum) + "' not found."
+				return (-1, errorStr)
+			if (not books[bookname].getPageObj(pagenum).hasLine(linenum)):
+				errorStr = '#Error#' + "Line '" + str(linenum) + "' not found."
+				return (-1, errorStr)
+		except KeyError:
+			errorStr = '#Error#' + "Book '" + str(bookname) + "' not found."
+			return (-1, errorStr)
+
 		# Generate an id for the post
 		new_post_id = self.generatePostID()
 		
@@ -182,7 +199,7 @@ class ServerDB(object):
 		print "Post added to the database and given serial number", newPostTuple
 	
 		# return postID
-		return new_post_id
+		return (new_post_id, '#UploadPostSuccess')
 
 	# Export db as a string
 	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
@@ -336,12 +353,15 @@ class ClientThread(threading.Thread):
 				postInfoStr = postDataStr.split('|')[0]
 				postContentStr = postDataStr.split('|')[1]
 	
-				# Insert the new post into database
-				newPostID = serverDB.insertPost(postInfoStr, postContentStr)
+				# Insert the new post into database, and obtain response
+				newPostID, resp = serverDB.insertPost(postInfoStr, postContentStr)
+
+				# Send the response back to the client
+				self.client.sock.send(resp)
 
 				# Trigger the messagePusher to push the new post
-				postInfoStr, postContentStr = serverDB.getPostAsStr(newPostID)
-				messagePusher.pushPost(postInfoStr, postContentStr)
+				#postInfoStr, postContentStr = serverDB.getPostAsStr(newPostID)
+				#messagePusher.pushPost(postInfoStr, postContentStr)
 
 			# New Posts Request message received, in the format:
 			# '#NewPostsRequest#[postID],[postID]...'

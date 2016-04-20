@@ -433,8 +433,7 @@ poll_interval = int(poll_interval_str)
 
 # Initialise global variables
 currentBookname = ""
-currentPagenum = 0
-currentLinenum = 0
+currentPagenumber = 0
 reader_exit_req = False
 MSG_SUCCESS = 'OK'
 
@@ -511,7 +510,7 @@ while (not reader_exit_req):
 		# Examine if display was without errors
 		if (resp == MSG_SUCCESS):
 			currentBookname = bookname
-			currentPagenum = pagenum
+			currentPagenumber = pagenum
 		else:
 			print "Could not display page. %s" % resp
 
@@ -528,13 +527,13 @@ while (not reader_exit_req):
 			print "Usage: post_to_forum [line number] [post content]"
 			continue
 
-#		# Check if book has line
-#		postLine = int(user_input[1])
-#		if (not books[currentBookname].hasLine(currentPagenumber, postLine)):
-#			print "Line %d does not exist on page %d in book '%s'" \
-#				% (postLine, currentPagenumber, currentBookname)
-#			continue
-	
+		# Check if given line number is valid
+		try:
+			postLine = int(user_input[1])
+		except ValueError:
+			print "Invalid line number '%s' to post to." % user_input[1]
+			continue			
+
 		# Construct the post content string
 		postContent = ' '.join(user_input[2:])	
 
