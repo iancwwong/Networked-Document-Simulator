@@ -133,14 +133,21 @@ class Line(object):
 
 # This class represents the database for the server
 # ie postsDB = { "bookname": (postInfo, postContent) }
-#    postInfo = { "postID": (senderName, pageNumber, lineNumber, read/unread) }
+#    postInfo = { "postID": (senderName, pageNumber, lineNumber) }
 #    postContent = { "postID": content }
+# NOTE: After each operation that involves returning a result, it will
+# pack the result with an error status. If there is an error, the result 
+# will be the error message.
 class ServerDB(object):
 
 	# Constants
 	# For generating serial numbers
 	MIN_ID_VAL = 1000
 	MAX_ID_VAL = 9999
+
+	# Success phrase
+	OP_FAILURE = 0		# OP = operation
+	OP_SUCCESS = 1
 
 	# Format of database:
 	# db = {
@@ -175,14 +182,14 @@ class ServerDB(object):
 		# Check if post information is valid - ie bookname, pagenum, and linenum
 		try:
 			if (not books[bookname].hasPage(pagenum)):
-				errorStr = '#Error#' + "Page '" + str(pagenum) + "' not found."
-				return (-1, errorStr)
+				errorStr = "Page '" + str(pagenum) + "' not found."
+				return (self.OP_FAILURE, errorStr)
 			if (not books[bookname].getPageObj(pagenum).hasLine(linenum)):
-				errorStr = '#Error#' + "Line '" + str(linenum) + "' not found."
-				return (-1, errorStr)
+				errorStr = "Line '" + str(linenum) + "' not found."
+				return (self.OP_FAILURE, errorStr)
 		except KeyError:
-			errorStr = '#Error#' + "Book '" + str(bookname) + "' not found."
-			return (-1, errorStr)
+			errorStr = "Book '" + str(bookname) + "' not found."
+			return (self.OP_FAILURE, errorStr)
 
 		# Generate an id for the post
 		new_post_id = self.generatePostID()
@@ -199,13 +206,36 @@ class ServerDB(object):
 		print "Post added to the database and given serial number", newPostTuple
 	
 		# return postID
-		return (new_post_id, '#UploadPostSuccess')
+		return (self.OP_SUCCESS, new_post_id)
+
+	# Return a list of post IDs for a particular book and page
+	def getPosts(self, bookName, pageNum):
+
+		# Loop through all posts, adding those that match the criteria to the final list
+		postIDs = []
+		for postID in self.db.keys():
+			postInfo, _ = self.db[postID]
+			_, bookname, pagenum, _ = postInfo
+			if (bookname == bookName and pagenum == pageNum):
+				postIDs.append(postID)
+
+		return (self.OP_SUCCESS, postIDs)
+
+	# Return the (postInfo, postContent) tuple, corresponding to a given ID
+	def getPost(self, postID):
+		try:
+			postInfo, postContent = self.db[postID]
+			return (self.OP_SUCCESS, (postInfo, postContent))
+
+		except KeyError:
+			errorStr = "No such postID exists."
+			return (self.OP_FAILURE, errorStr)
 
 	# Export db as a string
 	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
 	# postContentString: 	'#PostContent#Id#Content'
 	def exportAsStr(self):
-		# Loop through all books and posts
+		# Loop through all  posts
 		dbStr = ""
 		for postID in self.db.keys():
 			postInfo, postContent = self.db[postID]
@@ -215,37 +245,6 @@ class ServerDB(object):
 				+ bookname + "#" + str(pagenum) + "#" + str(linenum) + "\n"
 			dbStr = dbStr + "#PostContent#" + str(postID) + "#" + postcontent + "\n"
 		return dbStr
-
-	# Return a list of postID's that are NOT in the given compareList
-	def consult(self, compareList):
-		returnList = []
-		for postID in self.db.keys():
-			if not (postID in compareList):
-				returnList.append(postID)
-		return returnList
-
-	# Convert a post with given ID into a tuple consisting of two strings
-	# in the format:
-	# (postInfoStr, postContentStr)
-	# postInfoStr: '#PostInfo#[postID]#[sender]#[bookname]#[page]#[line]'
-	# postContentStr: '#PostContent#[postID]#[post content]'
-	def getPostAsStr(self, postID):
-		try:
-			# Obtain and parse the info in the db
-			postInfo, postContent = self.db[postID]
-			sendername, bookname, pagenum, linenum = postInfo		
-			postContent = postContent
-
-			# Construct the return strings and final tuple
-			postInfoStr = "#PostInfo#" + str(postID) + "#" + sendername + "#" \
-					+ bookname + "#" + str(pagenum) + "#" + str(linenum)
-			postContentStr = "#PostContent#" + str(postID) + "#" + postContent
-
-			return (postInfoStr, postContentStr)
-
-		except KeyError:
-			print "Error: postID of %d not found." % postID
-
 
 	# Generate a unique forum post serial ID
 	def generatePostID(self):	
@@ -354,48 +353,47 @@ class ClientThread(threading.Thread):
 				postContentStr = postDataStr.split('|')[1]
 	
 				# Insert the new post into database, and obtain response
-				newPostID, resp = serverDB.insertPost(postInfoStr, postContentStr)
+				resp, result = serverDB.insertPost(postInfoStr, postContentStr)
+
+				# Check if any errors inserting into database
+				if (resp == serverDB.OP_FAILURE):
+					uploadResp = "#Error#" + result
+					self.client.sock.send(uploadResp)
+					continue
 
 				# Send the response back to the client
-				self.client.sock.send(resp)
+				self.client.sock.send(result)
 
 				# Trigger the messagePusher to push the new post
 				#postInfoStr, postContentStr = serverDB.getPostAsStr(newPostID)
 				#messagePusher.pushPost(postInfoStr, postContentStr)
 
-			# New Posts Request message received, in the format:
-			# '#NewPostsRequest#[postID],[postID]...'
-			elif (msg_components[1] == 'NewPostsRequest'):
+			# Posts Request message received (to obtain posts for a particular book/page), in the format:
+			# '#PostsReq#[bookname]#[pagenum]'
+			elif (msg_components[1] == 'PostsReq'):
 
+				# Extract information given
 				print "Query for new posts received from %s!" % self.client.user_name
-				
-				clientPostIDs = msg_components[2].split(',')
-				
-				# Consult the database for a list of ID's that are not in 
-				# the client's list
-				newPostIDList = serverDB.consult(clientPostIDs)
+				bookName = msg_components[2]
+				pageNum = int(msg_components[3])
 
-				# Construct a list of posts that client does not have
-				# in the format:
-				# [ (postInfoStr, postContentStr) ]
-				# postInfoStr: '#PostInfo#[postID]#[sender]#[bookname]#[page]#[line]'
-				# postContentStr: '#PostContent#[postID]#[post content]'
-				newPostTupleList = []
-				for newPostID in newPostIDList:
-					postTuple = serverDB.getPostAsStr(newPostID)
-					newPostTupleList.append(postTuple)
+				# Get a list of all post ID's for the associated page/book,
+				resp, result = serverDB.getPosts(bookName, pageNum)
 
-				# Append the two parts and send it off in the format:
-				# 'NewPostData#PostInfo...|#PostContent...'
-				newPostStrList = []
-				for postTuple in newPostTupleList:
-					postInfoStr, postContentStr = postTuple
-					postStr = "#NewPostData" + postInfoStr + '|' + postContentStr
-					newPostStrList.append(postStr)
-				
-				# Send the list of posts client does NOT have
-				self.sendStream(newPostStrList, 'NewPosts', 'BeginNewPosts', 'PostComponentRecvd', 'EndNewPosts')
-				print "New posts successfully sent to %s!" % self.client.user_name
+				# Check if any errors retrieving post ids
+				if (resp == serverDB.OP_FAILURE):
+					postsResp = "#Error#" + result
+					self.client.sock.send(postsResp)
+					continue
+
+				# Construct the response string, and send to client
+				postsIDs = result
+				postsRespStr = "#PostsResp#"
+				for i in range(0, len(postsIDs)):
+					postsRespStr = postsRespStr + str(postsIDs[i])
+					if (i < len(postsIDs) - 1):
+						postsRespStr = postsRespStr + ','
+				self.client.sock.send(postsRespStr)
 				
 			else:
 				# Unknown type of message
@@ -521,13 +519,14 @@ for book in booklist:
 	book_dir, book_author = book			# Book_dir is equivalent to book's name
 	books[book_dir] = Book(book_dir, book_author)
 
-# DEBUGGING
-#runBookTests()
-#exit()
-
 # Create the server database
 print "Intitialising database..."
 serverDB = ServerDB()
+
+# DEBUGGING
+#runBookTests()
+runDBTests()
+#exit()
 
 # Create the messagePusher object
 print "Creating message pusher..."

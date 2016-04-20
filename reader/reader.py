@@ -6,9 +6,6 @@ import select
 import threading
 from sys import argv
 import sys
-import os
-import os.path
-import time
 
 # ----------------------------------------------------
 # CLASSES
@@ -133,17 +130,33 @@ class ReaderDB(object):
 		return self.post_status_chars[self.READ]
 
 	# Return a list of post ID's for a particular book, page, and line
-	def getPostIDs(self, bookName, pageNum, lineNum):
-
+	# Args could be at least one of the following from the list: bookname, pagenum, and linenum
+	# NOTE: Based on number of arguments, they are interpreted as follows: 
+	#    1 argument = bookname given (AT LEAST this is given)
+	#    2 arguments = bookname and pagenum given
+	#    3 arguments = bookname, pagenum, and linenum given
+	def getPostIDs(self, *args):
+		args = list(args)
+		numargs = len(args)
+		bookName = args[0]
+		if (numargs > 1):
+			pageNum = int(args[1])
+		if (numargs > 2):
+			lineNum = int(args[2])
+		
 		# Loop through all posts, returning the ones that match the condition
 		idList = []
 		for postID in self.db.keys():
 			postInfo, _ = self.getPost(postID)
 			_, bookname, page, line, _ = postInfo
-			if (bookname == bookName and page == pageNum and line == lineNum):
-				idList.append(postID)				
+			if (bookname == bookName):
+				if (numargs > 1 and page == pageNum):
+					if (numargs > 2 and line == lineNum):
+						idList.append(postID)
+					idList.append(postID)
+				idList.append(postID)
+			
 		return idList
-		
 
 # This class is the thread that runs when reader is listening for input from server
 # NOTE: All messages sent by server should start with '#', followed by a phrase
@@ -264,7 +277,37 @@ def displayPage(bookName, pageNum):
 		# Print appropriately
 		print "%c  %d %s" % (linePostsStatus, lineNum, linecontent)
 
-	return MSG_SUCCESS	
+	return MSG_SUCCESS
+
+# Request to find new posts for a particular bookname and page number
+def updateLocalPosts(bookname, pagenum):
+	
+	# Request for a list of postID's that are associated with the bookname 
+	# and page number
+	reqStr = "#PostsReq#" + bookname + '#' + str(pagenum)
+	sock.send(reqStr)
+
+	# Listen for response from server
+	# Format: '#PostsResp#[Postid],[Postid]...'
+	msg = sock.recv(BUFFER_SIZE)
+	msg_components = msg.split('#')
+	if (msg_components[1] == 'Error'):
+		return 'Error: ' + msg_components[2]
+
+	# Check correct message received
+	if (msg_components[1] != 'PostsResp'):
+		return "Wrong message received."
+	
+	# Extract list of postID's that are sent from server
+	serverPostIDs = msg_components[2].split(',')
+	serverPostIDs = [ int(postID) for postID in serverPostIDs ]		# Convert all into ints
+
+	# Get a list of ID's that are owned locally in the database, but NOT
+	# in the list obtained from server
+	unknownPostIDs = [ postID for postID in serverPostIDs if postID not in readerDB.getPostIDs(bookname, pagenum) ]
+
+	print "Unknown posts: ", unknownPostIDs
+		
 
 # Display the posts for a particular book, page, and line
 # Involves querying the database, given the bookName, pageNum, and lineNum
@@ -277,7 +320,7 @@ def displayPosts(bookName, pageNum, lineNum):
 	postids = readerDB.getPostIDs(bookName, pageNum, lineNum)
 
 	# Display the retrieved posts to the user
-	print "-> From book '%s', Page %d, Line number %d:" % (bookName, pageNum, lineNum)
+	print "From book '%s', Page %d, Line number %d:" % (bookName, pageNum, lineNum)
 	if (len(postids) == 0):
 		print "\tNo posts to display."
 	else:
@@ -309,24 +352,6 @@ def sendNewPost(postInfoStr, postContentStr):
 		return 'Error: ' + msg_components[2]
 	else:
 		return MSG_SUCCESS
-
-# Request a sync between posts in readerDB and server
-def reqSyncPosts():
-	print "Requesting for server to send new posts..."
-	currentPosts = readerDB.getAllPostIDs()
-	print "All posts current possessed: ", currentPosts
-	
-	# Construct the string of post ID's, separated by commas
-	# Format: #NewPostsRequest#[postID],[postID],[postID],...
-	newPostsReqStr = "#NewPostsRequest#"
-	for postIDIndex in range (0, len(currentPosts)):
-		newPostsReqStr = newPostsReqStr + str(currentPosts[postIDIndex])
-		if (postIDIndex < len(currentPosts)-1):
-			newPostsReqStr = newPostsReqStr + ","
-	
-	# Send the string to server
-	sock.send(newPostsReqStr)
-	print "Request submitted."
 
 # Send a stream of data to server, while controlling when the client
 # should continue sending. Uses the reader socket to send messages.
@@ -435,7 +460,7 @@ print "Initialising reader database..."
 readerDB = ReaderDB()
 
 # DEBUGGING
-runDBTests()
+#runDBTests()
 #exit()
 
 # Prepare the socket
@@ -546,7 +571,7 @@ while (not reader_exit_req):
 	
 		# Check if currentBookname is initialised
 		if (currentBookname == ""):
-			print "Uncertain book and page. Use the command 'display' to initialise."
+			print "Uncertain book. Use the command 'display' to initialise."
 			continue
 
 		# Display posts at the current book, page, and line
@@ -555,9 +580,18 @@ while (not reader_exit_req):
 	# Update the database with server
 	elif (user_input[0] == 'serversync'):
 		
-		print "Database before syncing:"
-		print readerDB.exportAsStr()
-		reqSyncPosts()
+		# Check if currentBookname/cuirrentPagenum is initialised
+		if (currentBookname == "" or currentPagenumber == 0):
+			print "Uncertain book and page. Use the command 'display' to initialise."
+			continue
+
+		resp = updateLocalPosts(currentBookname, currentPagenumber)
+
+		# Examine if posts were successfully updated
+		if (resp == MSG_SUCCESS):
+			print "Successfully updated database!"
+		else:
+			print "Could not update posts. %s" % resp
 	
 	# Unknown command
 	else:
