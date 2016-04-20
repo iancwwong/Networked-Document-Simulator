@@ -14,16 +14,18 @@ import time
 # CLASSES
 # ----------------------------------------------------
 		
-# This class represents the database for the reader
-# Contains a database dict with tuples of the post info, and post content
-# ie db = { "bookname": (postInfo, postContent) }
-#    postInfo = { "postID": (senderName, pageNumber, lineNumber, read/unread) }
-#    postContent = { "postID": content }
+# This class represents the database for the reader that contains forum posts
+# Format:
+#
+# db = { "postID" : (postInfo, postContents) }
+# postInfo = (senderName, bookName, pageNum, lineNum, readStatus)
+# postContents = postContent
+#
 class ReaderDB(object):
 
 	# Constants
-	UNREAD = 1
-	READ = 2
+	UNREAD = 0
+	READ = 1
 
 	# Constructor
 	def __init__(self):
@@ -33,7 +35,7 @@ class ReaderDB(object):
 	# Insert a new post, given two strings:
 	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
 	# postContentString: 	'#PostContent#Id#Content' 
-	# NOTE: Each postID corresponds to exactly 1 postInfo and postContent entry
+	# NOTE: postID is interpreted as an int (NOT a string)
 	def insertPost(self, postInfoStr, postContentStr):
 
 		# Parse the given strings
@@ -48,121 +50,72 @@ class ReaderDB(object):
 			return
 		
 		# Parse and set the forum post based on the split strings
-		postID = postInfoComponents[2]
+		postID = int(postInfoComponents[2])
 		sendername = postInfoComponents[3]	
 		bookname = postInfoComponents[4]
 		pagenumber = int(postInfoComponents[5])
 		linenumber = int(postInfoComponents[6])
 		readstatus = self.UNREAD	
 		postcontent = '#'.join(postContentComponents[3:])
+		
+		# Construct the postInfo and postContent tuple
+		postInfo = (sendername, bookname, pagenumber, linenumber, readstatus)
+		postContent = postcontent
+		
+		# Insert tuple into database
+		self.db[postID] = (postInfo, postContent)
 
+	# Given a postID, returns a tuple, containing info and content of a forum post
+	def getPost(self, postID):
 		try:
-			# Check whether there are tuples in the db for the book
-			if (bool(self.db[bookname]) == False):
-				# Initialise the post info and post content dicts
-				postInfo = {}
-				postContent = {}
-				self.db[bookname] = (postInfo, postContent)
-
-			# Complete the post info and post content dicts
-			postInfo, postContent = self.db[bookname]
-			postInfo[postID] = (sendername, bookname, pagenumber, linenumber, readstatus)
-			postContent[postID] = postcontent
-			
+			return self.db[postID]
 		except KeyError:
-			print "Error: Book %s does not exist in database" % (bookname)
+			print "Error: No such post with id %d found." % postID
+
+	# Set a post read status to be 'Read', given a particular post ID
+	def setRead(self, readPostID):
+		try:
+			# Get the post tuple
+			postInfo, postContent = self.getPost(readPostID)
+			
+			# Manipulate the read status
+			sender, book, page, line, _ = postInfo
+			readstatus = self.READ
+			
+			# Re-insert tuple into database
+			newPostInfo = (sender, book, page, line, readstatus)
+			self.db[readPostID] = (newPostInfo, postContent)
+
+		except:
+			print "Error: No such post with id %d found." % readPostID
 
 	# Send a list of post statuses at a specific book, on pages and lines
 	# Format: [ (status, pagenum, linenum) ]
-	def getBookPostStatuses(self, bookname):
-		statusList = []
-		
-		# Examine posts in the given bookname
-		try:
-			if (not self.db[bookname]):
-				return []
-			postInfo, postContent = self.db[bookname]
-			for postID in postInfo.keys():
-				
-				# Add post status to list
-				sender, bookname, pagenumber, linenumber, readstatus = postInfo[postID]
-				statusList.append((readstatus, pagenumber, linenumber))
-				
-			return statusList
-
-		except KeyError:
-			print "Error: Book %s does not exist in database" % (bookname)
+	#def getBookPostStatuses(self, bookname):
 
 	# Return a list of posts for a particular book, page, and line
 	# Format: [ (postID, senderName, postcontent, read/unread) ]
-	def getPosts(self, bookName, pageNum, lineNum):
-
-		# Loop through all posts in the given book, filtering only those
-		# with the given page and line number
-		postList = []
-		
-		# Check whether there are any posts for the book, page, and line
-		try:
-			if (bool(self.db[bookName] == False)):
-				return []
-			postInfo, postContent = self.db[bookName]
-			for postID in postInfo.keys():
-				sendername, bookname, pagenumber, linenumber, readstatus = postInfo[postID]
-				postcontent = postContent[postID]
-				if (bookname == bookName and pagenumber == pageNum and linenumber == lineNum):
-					postList.append((postID, sendername, postcontent, readstatus))
-
-			return postList			
-
-		except KeyError:
-			print "Error: book name %s not found." % bookName
-
-	# Set a post read status to be 'Read'
-	# NOTE: Assumes postID's are unique
-	def setRead(self, readPostID):
-		# Find the post with the given postID
-		for bookName in self.db.keys():
-			# Check whether it's empty
-			if (bool(self.db[bookName]) == False):
-				return
-			postInfo, postContent = self.db[bookName]
-			
-			# Check whether there is a post with the given id
-			if readPostID in postInfo.keys():
-				sendername, bookname, pagenumber, linenumber, readstatus = postInfo[readPostID]
-				postInfo[readPostID] = (sendername, bookname, pagenumber, linenumber, self.READ)
-				return	
+	#def getPosts(self, bookName, pageNum, lineNum):
 
 	# Export db as a string
-	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber#Read/Unread'
-	# postContentString: 	'#PostContent#Id#Content'
+	# Post ID [id]:
+	# Info: [sender], [bookname], [pagenum], [linenum], [readstatus]
+	# Content: [post content]
+	# 
 	def exportAsStr(self):
-		# Loop through all books and posts
 		dbStr = ""
-		for bookName in self.db.keys():
-			if (bool(self.db[bookName]) == False):
-				continue
-			postInfo, postContent = self.db[bookName]	
-			for postID in postInfo.keys():
-				sendername, bookname, pagenumber, linenumber, readstatus = postInfo[postID]
-				dbStr = dbStr + "#PostInfo#" + str(postID) + "#" + sendername + "#" \
-					+ bookname + "#" + str(pagenumber) + "#" + str(linenumber) + "#" \
-					+ str(readstatus) + "\n"
-				postcontent = postContent[postID]
-				dbStr = dbStr + "#PostContent#" + str(postID) + "#" + postcontent + "\n"
+		for postID in self.db.keys():
+			dbStr = dbStr + "Post ID " + str(postID) + ":\n"
+			postInfo, postContent = self.db[postID]
+			sender, book, page, line, readStatus = postInfo
+			dbStr = dbStr + "Info: " + sender + "," + book + "," + str(page) + \
+				"," + str(line) + "," + str(readStatus) + "\n"
+			dbStr = dbStr + "Content: " + postContent + "\n\n"
 		return dbStr
 
 	# Obtains a list of post ID's in the entire database
 	def getAllPostIDs(self):
-		# Loop through all books and posts
-		postIDs = []
-		for bookName in self.db.keys():
-			if (bool(self.db[bookName]) == False):
-				continue
-			postInfo, postContent = self.db[bookName]	
-			for postID in postInfo.keys():
-				postIDs.append(postID)
-		return postIDs
+		return self.db.keys()
 		
 
 # This class is the thread that runs when reader is listening for input from server
@@ -242,14 +195,7 @@ def runDBTests():
 	postContentStr = "#PostContent#5699#Repetition of 'my' is used."
 	readerDB.insertPost(postInfoStr, postContentStr)
 
-	# Update the books
-	#books['shelley'].displayPage(2)
-	print "Updating the book..."
-	books['shelley'].update()
-	#books['shelley'].displayPage(2)
-	books['exupery'].update()
-	books['joyce'].update()
-	
+	readerDB.setRead(5699)
 	print "Database:"
 	print readerDB.exportAsStr()
 
@@ -332,6 +278,7 @@ def sendNewPost(postInfoStr, postContentStr):
 def reqSyncPosts():
 	print "Requesting for server to send new posts..."
 	currentPosts = readerDB.getAllPostIDs()
+	print "All posts current possessed: ", currentPosts
 	
 	# Construct the string of post ID's, separated by commas
 	# Format: #NewPostsRequest#[postID],[postID],[postID],...
@@ -452,7 +399,8 @@ print "Initialising reader database..."
 readerDB = ReaderDB()
 
 # DEBUGGING
-#runDBTests()
+runDBTests()
+exit()
 
 # Prepare the socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)	# TCP
@@ -552,7 +500,6 @@ while (not reader_exit_req):
 			print "Successfully posted!"
 		else:
 			print "Could not post. %s" % resp
-
 
 	# Display the posts for a particular line number on the current book and page
 	elif (user_input[0] == 'read_post'):
