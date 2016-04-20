@@ -394,6 +394,42 @@ class ClientThread(threading.Thread):
 					if (i < len(postsIDs) - 1):
 						postsRespStr = postsRespStr + ','
 				self.client.sock.send(postsRespStr)
+
+			# Posts Request message received (to obtain information of posts through given ID's) in the format:
+			# '#GetPostsReq#[PostID],[PostID]...'
+			elif (msg_components[1] == 'GetPostsReq'):
+				
+				# Extract the information given
+				postIDs = data.split('#GetPostsReq#')[1].split(',')
+				postIDs = [ int(postID) for postID in postIDs ]
+
+				# Construct the list of strings to send back (ie translating
+				# all the posts given by their id's into formatted strings
+				# into the format:
+				# '#PostInfo...|#PostContent'
+				# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
+				# postContentString: 	'#PostContent#Id#Content'
+				postStrings = []
+				for postID in postIDs:
+					resp, result = serverDB.getPost(postID)
+
+					# Error obtaining post - report it
+					if (resp == serverDB.OP_FAILURE):
+						errorStr = '#Error#' + resp
+						postStrings.append(errorStr)
+						continue
+
+					# Convert postInfo and postContent into a formatted string for sending
+					postInfo, postContent = result
+					sender, bookname, page, line = postInfo
+					postInfoStr = '#PostInfo#' + str(postID) + '#' + sender + '#' + \
+							bookname + '#' + str(page) + '#' + str(line)
+					postContentStr = '#PostContent#' + str(postID) + '#' + postContent
+					postDataStr = postInfoStr + '|' + postContentStr
+					postStrings.append(postDataStr)
+
+				# Send all the posts as a stream
+				self.sendStream(postStrings, 'GetPostsResp', 'BeginGetPostsResp', 'PostRcvd',  'EndGetPostsResp')				
 				
 			else:
 				# Unknown type of message
