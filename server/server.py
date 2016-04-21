@@ -279,11 +279,15 @@ class MessagePusher(object):
 	# Constructor - given a list of client threads
 	def __init__(self, clientThreads):
 		self.clientThreads = clientThreads
+		self.pushThreads = [ thread for thread in clientThreads if thread.client.opmode == 'push' ]
 
-	# Push a forum post
+	# Push a forum post to all clients operating in push mode
 	def pushPost(self, postDataStr):
-		for thread in self.clientThreads:
-			thread.pushPost(postDataStr)
+		if (len(self.pushThreads) == 0):
+			print "Push list empty. No action required!"
+		else:
+			for thread in self.pushThreads:
+				thread.pushPost(postDataStr)
 
 # This class represents a client from the server's perspective
 class ClientObj(object):

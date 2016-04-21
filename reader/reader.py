@@ -615,7 +615,6 @@ print "Successfully connected to server!"
 # Send intro message with info about this client
 intro_message = "#Intro#" + user_name + "#" + opmode + "#" + str(poll_interval)
 sock.send(intro_message)
-print "Sent message: ", intro_message
 
 # Start the listening thread
 print "Starting background thread..."
