@@ -522,12 +522,8 @@ class ClientThread(threading.Thread):
 	# postContentStr: '#PostContent#[postID]#[post content]'
 	def pushPost(self, postDataStr):
 
-		# If client is not in 'push' mode, then ignore
-		if (self.client.opmode != "push"):
-			return
-
 		self.client.sock.send("#NewSinglePost" + postDataStr, BUFFER_SIZE)
-		print "Pushed message to client."
+		print "Pushed message to client '%s'",self.client.user_name
 
 	# Send a stream of data to client, while controlling when the server
 	# should continue sending
