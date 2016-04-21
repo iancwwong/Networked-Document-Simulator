@@ -420,8 +420,6 @@ class ClientThread(threading.Thread):
 
 				# Get a list of all post ID's for the associated page/book,
 				resp, result = serverDB.getPostsID(bookName, pageNum)
-				print "Status:", resp
-				print "Result:", result
 
 				# Check if any errors retrieving post ids
 				if (resp == serverDB.OP_FAILURE):
@@ -548,7 +546,7 @@ class ClientThread(threading.Thread):
 				return data			
 
 # ----------------------------------------------------
-# MAIN
+# FUNCTIONS
 # ----------------------------------------------------
 
 # Basic testing for database
@@ -589,6 +587,10 @@ def runBookTests():
 			print books[bookname].getPageContent(pageNum)
 			print ""
 		print ""
+
+# ----------------------------------------------------
+# MAIN
+# ----------------------------------------------------
 	
 # Global Variables
 clientThreadList = []		# Maintain a list of client threads
@@ -622,7 +624,7 @@ serverDB = ServerDB()
 
 # DEBUGGING
 #runBookTests()
-runDBTests()
+#runDBTests()
 #exit()
 
 # Create the messagePusher object

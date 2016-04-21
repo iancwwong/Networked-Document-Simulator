@@ -205,23 +205,17 @@ class BackgroundThread(threading.Thread):
 				# postContentString: 	'#PostContent#Id#Content'
 				if (data_components[1] == 'NewSinglePost'):
 
-					# Db is not yet updated
-					self.updateDBComplete = False
-
 					# Accept the new post
 					postInfoStr = data.split('#NewSinglePost')[1].split('|')[0]
 					postContentStr = data.split('#NewSinglePost')[1].split('|')[1]
 					readerDB.insertPost(postInfoStr, postContentStr)
 					
 					# Determine whether to print out feedback message
-					#postInfoStr = postInfoStr.split('#')
-					#bookName = postInfoStr[4]
-					#pageNum = int(postInfoStr[5])
-					#if (bookName == currentBookname and pageNum == currentPagenumber):
-					print "There are new posts."
-
-					# DB is now updated
-					self.updateDBComplete = True		
+					postInfoStr = postInfoStr.split('#')
+					bookName = postInfoStr[4]
+					pageNum = int(postInfoStr[5])
+					if (bookName == currentBookname and pageNum == currentPagenumber):
+						print "There are new posts!"	
 	
 		# Pull mode - carry out appropriate procedures depending on current command		
 		elif (opmode == 'pull'):
@@ -234,7 +228,7 @@ class BackgroundThread(threading.Thread):
 					self.updateDBComplete = False
 					
 					# Update the local posts for particlar book and page
-					self.updateLocalPosts(currentBookname, currentPagenumber)
+					resp = self.updateLocalPosts(currentBookname, currentPagenumber)
 
 					# DB is now updated
 					self.updateDBComplete = True
@@ -320,13 +314,17 @@ class BackgroundThread(threading.Thread):
 		# Listen for response from server
 		# Format: '#GetPostsIDResp#[Postid],[Postid]...'
 		msg = sock.recv(BUFFER_SIZE)
-		print msg
 		msg_components = msg.split('#')
 		if (msg_components[1] == 'Error'):
 			return 'Error: ' + msg_components[2]
 	
 		# Extract list of postID's that are sent from server
 		serverPostIDs = msg_components[2].split(',')
+		
+		# Check whether there are any post IDs
+		if (len(serverPostIDs) == 1 and serverPostIDs[0] == ''):
+			return MSG_SUCCESS
+
 		serverPostIDs = [ int(postID) for postID in serverPostIDs ]		# Convert all into ints
 
 		# Get a list of ID's that are in the list from the server, but
@@ -335,7 +333,6 @@ class BackgroundThread(threading.Thread):
 	
 		# Check if any posts are needed to be downloaded
 		if (len(unknownPostIDs) == 0):
-			print "Database is up to date!"
 			return MSG_SUCCESS
 
 		# Download the posts for each of these unknown post ID's'
@@ -368,11 +365,10 @@ class BackgroundThread(threading.Thread):
 			postInfoString = post.split('|')[0]
 			postContentString = post.split('|')[1]
 			readerDB.insertPost(postInfoString, postContentString)
-		print "Database updated!"
 
+		print "There are new posts!"
 		return MSG_SUCCESS		
 	
-
 # ----------------------------------------------------
 # FUNCTIONS
 # ----------------------------------------------------
@@ -487,7 +483,6 @@ def sendNewPost(postInfoStr, postContentStr):
 	msg = selectRecv(BUFFER_SIZE)
 	while (msg == ""):
 		msg = selectRecv(BUFFER_SIZE)
-	print "Received msg:", msg
 	msg_components = msg.split('#')
 	if (msg_components[1] == 'Error'):
 		return 'Error: ' + msg_components[2]
