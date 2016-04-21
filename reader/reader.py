@@ -6,6 +6,7 @@ import select
 import threading
 from sys import argv
 import sys
+import time
 
 # ----------------------------------------------------
 # CLASSES
@@ -160,60 +161,216 @@ class ReaderDB(object):
 				idList.append(postID)	
 		return idList
 
-# This class is the thread that runs when reader is listening for input from server
-# NOTE: All messages sent by server should start with '#', followed by a phrase
-# that helps reader identify what message it is
-class ListenThread(threading.Thread):
+# This is the thread that fulfils background processes when reader is running
+# Provides the background functionalities needed by pull / push mode
+# Works closely with global variables / functions in main thread
+class BackgroundThread(threading.Thread):
 
 	# Constructor given the socket connected to the server
 	def __init__(self,socket):
 		threading.Thread.__init__(self)
-		self.event = threading.Event()
-		self.socket = socket
+		self.event = threading.Event()		# for terminating thread
+		self.socket = socket			# Used to listen for messages
+		self.currentCommand = ""		# Used to keep track of current user command
+		self.updateDBComplete = False
 
 	# Execute thread - constantly listen for messages
 	# from the connected server
 	def run(self):
 
-		# Constantly listen for messages until event is set
-		while not self.event.isSet():
+		# Push mode - request update of posts from server, and listen indefinitely for incoming messages
+		if (opmode == 'push'):
+			
+			# Update the reader's database with server's
+			resp = self.syncAllPosts()
+
+			# Examine if posts were successfully updated
+			if (resp != MSG_SUCCESS):
+				print "Could not update posts. %s" % resp
+
+			# Indicate db is updated
+			self.updateDBComplete = True
+
+			# Constantly listen for messages from server
+			while not self.event.isSet():
 				
-			data = selectRecv(BUFFER_SIZE)
-			if (data == ""):
-				continue
-			data_components = data.split('#')
+				data = selectRecv(BUFFER_SIZE)
+				if (data == ""):
+					continue
+				data_components = data.split('#')
 
-			# Server is returning a stream of new posts
-			# Patiently receive the stream of strings from server
-			if (data_components[1] == 'NewSinglePost'):
+				# Server is returning a new post, in the format:
+				# postString:		'#NewSinglePost#postInfoString...|postContentString'
+				# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
+				# postContentString: 	'#PostContent#Id#Content'
+				if (data_components[1] == 'NewSinglePost'):
 
-				# Accept the new post
-				postInfoStr = data.split('#NewSinglePost')[1].split('|')[0]
-				postContentStr = data.split('#NewSinglePost')[1].split('|')[1]
+					# Db is not yet updated
+					self.updateDBComplete = False
 
-				print "Strings to insert:"
-				print postInfoStr
-				print postContentStr
-				readerDB.insertPost(postInfoStr, postContentStr)
-				print "Successfully inserted new post!"
+					# Accept the new post
+					postInfoStr = data.split('#NewSinglePost')[1].split('|')[0]
+					postContentStr = data.split('#NewSinglePost')[1].split('|')[1]
+					readerDB.insertPost(postInfoStr, postContentStr)
+					
+					# Determine whether to print out feedback message
+					#postInfoStr = postInfoStr.split('#')
+					#bookName = postInfoStr[4]
+					#pageNum = int(postInfoStr[5])
+					#if (bookName == currentBookname and pageNum == currentPagenumber):
+					print "There are new posts."
+
+					# DB is now updated
+					self.updateDBComplete = True		
+	
+		# Pull mode - carry out appropriate procedures depending on current command		
+		elif (opmode == 'pull'):
+			while not self.event.isSet():
 				
+				# Display command:
+				if (self.currentCommand == 'display'):
+
+					# Indicate DB is not updated
+					self.updateDBComplete = False
+					
+					# Update the local posts for particlar book and page
+					self.updateLocalPosts(currentBookname, currentPagenumber)
+
+					# DB is now updated
+					self.updateDBComplete = True
+		
+					# Delay so display can be carried out
+					time.sleep(0.0015)
+	
+					# Set back to false, and proceed with timer
+					self.updateDBComplete = False
+					time.sleep(poll_interval - 0.0015)
+	
 		sock.close()
 
-	# Process each new post in a given string list
-	# Involves examing each item in the format:
-	# '#NewPostData#PostInfo#[postID]#[sender]#[bookname]#[pagenum]#[linenum]|#PostContent#[postId]#[postContent]''
-	def processNewPosts(self, newPostsList):
+	# Syncs ALL posts from this reader with server
+	def syncAllPosts(self):
+	
+		# Get the list of current posts this reader has
+		postIDs = readerDB.getAllPostIDs()
+	
+		# Construct string to send
+		syncReqStr = '#SyncPostsReq#'
+		for i in range(0,len(postIDs)):
+			syncReqStr = syncReqStr + str(postIDs[i])
+			if (i < len(postIDs)-1):
+				syncReqStr = syncReqStr + ','
+		sock.send(syncReqStr)
+	
+		# Wait for server response
+		resp = sock.recv(BUFFER_SIZE)
+		if (resp.split('#')[1] != 'SyncPostsResp'):
+			print "Wrong message obtained."
+			return
+	
+		# Extract the list of ID's that reader does NOT have (that server has)
+		unknownPostIDs = resp.split('#SyncPostsResp#')[1].split(',')
 
-		# Parse and insert each post item into db
-		for newPostStr in newPostsList:
-			postData = newPostStr.split('#NewPostData')[1]
-			postInfoStr = postData.split('|')[0]
-			postContentStr = postData.split('|')[1]			
-			readerDB.insertPost(postInfoStr, postContentStr)
+		if (len(unknownPostIDs) == 1 and unknownPostIDs[0] == ''):
+			print "Database up to date!"
+			return MSG_SUCCESS
 
-		# Update all the books	
-		for bookname in books.keys():
-			books[bookname].update()	
+		# Download the posts for each of these unknown post ID's'
+		# Construct the string to send to server
+		downloadReqStr = "#GetPostsReq#"
+		for i in range(0, len(unknownPostIDs)):
+			downloadReqStr = downloadReqStr + str(unknownPostIDs[i])
+			if (i < len(unknownPostIDs) - 1):
+				downloadReqStr = downloadReqStr + ','
+		sock.send(downloadReqStr)
+
+		# Listen for server response
+		listenFor('GetPostsResp')
+	
+		# Receive the new posts as a stream
+		# Each post will be of format:
+		# '#PostInfo...|#PostContent'
+		# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
+		# postContentString: 	'#PostContent#Id#Content'
+		newPosts = receiveStream('BeginGetPostsResp', 'PostRcvd', 'EndGetPostsResp')
+
+		# Insert each post into the database
+		for post in newPosts:
+			# Check for error
+			post_components = post.split('#')
+			if (post_components[1] == 'Error'):
+				print 'Error: ' + post_components[2]
+				continue
+
+			postInfoString = post.split('|')[0]
+			postContentString = post.split('|')[1]
+			readerDB.insertPost(postInfoString, postContentString)
+		print "Database updated!"
+
+		return MSG_SUCCESS
+
+	# Request to find new posts for a particular bookname and page number
+	def updateLocalPosts(self, bookname, pagenum):
+	
+		# Request for a list of postID's that are associated with the bookname 
+		# and page number
+		reqStr = "#GetPostsIDReq#" + bookname + '#' + str(pagenum)
+		sock.send(reqStr)
+
+		# Listen for response from server
+		# Format: '#GetPostsIDResp#[Postid],[Postid]...'
+		msg = sock.recv(BUFFER_SIZE)
+		print msg
+		msg_components = msg.split('#')
+		if (msg_components[1] == 'Error'):
+			return 'Error: ' + msg_components[2]
+	
+		# Extract list of postID's that are sent from server
+		serverPostIDs = msg_components[2].split(',')
+		serverPostIDs = [ int(postID) for postID in serverPostIDs ]		# Convert all into ints
+
+		# Get a list of ID's that are in the list from the server, but
+		# not owned locally at reader
+		unknownPostIDs = [ postID for postID in serverPostIDs if postID not in readerDB.getPostIDs(bookname, pagenum) ]
+	
+		# Check if any posts are needed to be downloaded
+		if (len(unknownPostIDs) == 0):
+			print "Database is up to date!"
+			return MSG_SUCCESS
+
+		# Download the posts for each of these unknown post ID's'
+		# Construct the string to send to server
+		downloadReqStr = "#GetPostsReq#"
+		for i in range(0, len(unknownPostIDs)):
+			downloadReqStr = downloadReqStr + str(unknownPostIDs[i])
+			if (i < len(unknownPostIDs) - 1):
+				downloadReqStr = downloadReqStr + ','
+		sock.send(downloadReqStr)
+
+		# Listen for server response
+		listenFor('GetPostsResp')
+	
+		# Receive the new posts as a stream
+		# Each post will be of format:
+		# '#PostInfo...|#PostContent'
+		# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
+		# postContentString: 	'#PostContent#Id#Content'
+		newPosts = receiveStream('BeginGetPostsResp', 'PostRcvd', 'EndGetPostsResp')
+
+		# Insert each post into the database
+		for post in newPosts:
+			# Check for error
+			post_components = post.split('#')
+			if (post_components[1] == 'Error'):
+				print 'Error: ' + post_components[2]
+				continue
+
+			postInfoString = post.split('|')[0]
+			postContentString = post.split('|')[1]
+			readerDB.insertPost(postInfoString, postContentString)
+		print "Database updated!"
+
+		return MSG_SUCCESS		
 	
 
 # ----------------------------------------------------
@@ -286,68 +443,6 @@ def displayPage(bookName, pageNum):
 
 	return MSG_SUCCESS
 
-# Request to find new posts for a particular bookname and page number
-def updateLocalPosts(bookname, pagenum):
-	
-	# Request for a list of postID's that are associated with the bookname 
-	# and page number
-	reqStr = "#GetPostsIDReq#" + bookname + '#' + str(pagenum)
-	sock.send(reqStr)
-
-	# Listen for response from server
-	# Format: '#PostsResp#[Postid],[Postid]...'
-	msg = sock.recv(BUFFER_SIZE)
-	msg_components = msg.split('#')
-	if (msg_components[1] == 'Error'):
-		return 'Error: ' + msg_components[2]
-	
-	# Extract list of postID's that are sent from server
-	serverPostIDs = msg_components[2].split(',')
-	serverPostIDs = [ int(postID) for postID in serverPostIDs ]		# Convert all into ints
-
-	# Get a list of ID's that are in the list from the server, but
-	# not owned locally at reader
-	unknownPostIDs = [ postID for postID in serverPostIDs if postID not in readerDB.getPostIDs(bookname, pagenum) ]
-	
-	# Check if any posts are needed to be downloaded
-	if (len(unknownPostIDs) == 0):
-		print "Database is up to date!"
-		return MSG_SUCCESS
-
-	# Download the posts for each of these unknown post ID's'
-	# Construct the string to send to server
-	downloadReqStr = "#GetPostsReq#"
-	for i in range(0, len(unknownPostIDs)):
-		downloadReqStr = downloadReqStr + str(unknownPostIDs[i])
-		if (i < len(unknownPostIDs) - 1):
-			downloadReqStr = downloadReqStr + ','
-	sock.send(downloadReqStr)
-
-	# Listen for server response
-	listenFor('GetPostsResp')
-	
-	# Receive the new posts as a stream
-	# Each post will be of format:
-	# '#PostInfo...|#PostContent'
-	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
-	# postContentString: 	'#PostContent#Id#Content'
-	newPosts = receiveStream('BeginGetPostsResp', 'PostRcvd', 'EndGetPostsResp')
-
-	# Insert each post into the database
-	for post in newPosts:
-		# Check for error
-		post_components = post.split('#')
-		if (post_components[1] == 'Error'):
-			print 'Error: ' + post_components[2]
-			continue
-
-		postInfoString = post.split('|')[0]
-		postContentString = post.split('|')[1]
-		readerDB.insertPost(postInfoString, postContentString)
-	print "Database updated!"
-
-	return MSG_SUCCESS
-
 # Display the posts for a particular book, page, and line
 # Involves querying the database, given the bookName, pageNum, and lineNum
 # NOTE: The given pageNum and lineNum are NOT index based
@@ -389,74 +484,16 @@ def sendNewPost(postInfoStr, postContentStr):
 	sock.send(newPostStr)
 
 	# Listen for response from server
-	msg = sock.recv(BUFFER_SIZE)
+	msg = selectRecv(BUFFER_SIZE)
+	while (msg == ""):
+		msg = selectRecv(BUFFER_SIZE)
+	print "Received msg:", msg
 	msg_components = msg.split('#')
 	if (msg_components[1] == 'Error'):
 		return 'Error: ' + msg_components[2]
 	else:
 		print "Successfully posted!"
 		return MSG_SUCCESS
-
-# Syncs ALL posts from this reader with server
-def syncAllPosts():
-	
-	# Get the list of current posts this reader has
-	postIDs = readerDB.getAllPostIDs()
-	
-	# Construct string to send
-	syncReqStr = '#SyncPostsReq#'
-	for i in range(0,len(postIDs)):
-		syncReqStr = syncReqStr + str(postIDs[i])
-		if (i < len(postIDs)-1):
-			syncReqStr = syncReqStr + ','
-	sock.send(syncReqStr)
-	
-	# Wait for server response
-	resp = sock.recv(BUFFER_SIZE)
-	if (resp.split('#')[1] != 'SyncPostsResp'):
-		print "Wrong message obtained."
-		return
-	
-	# Extract the list of ID's that reader does NOT have (that server has)
-	unknownPostIDs = resp.split('#SyncPostsResp#')[1].split(',')
-
-	if (len(unknownPostIDs) == 1 and unknownPostIDs[0] == ''):
-		print "Database up to date!"
-		return MSG_SUCCESS
-
-	# Download the posts for each of these unknown post ID's'
-	# Construct the string to send to server
-	downloadReqStr = "#GetPostsReq#"
-	for i in range(0, len(unknownPostIDs)):
-		downloadReqStr = downloadReqStr + str(unknownPostIDs[i])
-		if (i < len(unknownPostIDs) - 1):
-			downloadReqStr = downloadReqStr + ','
-	sock.send(downloadReqStr)
-
-	# Listen for server response
-	listenFor('GetPostsResp')
-	
-	# Receive the new posts as a stream
-	# Each post will be of format:
-	# '#PostInfo...|#PostContent'
-	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
-	# postContentString: 	'#PostContent#Id#Content'
-	newPosts = receiveStream('BeginGetPostsResp', 'PostRcvd', 'EndGetPostsResp')
-
-	# Insert each post into the database
-	for post in newPosts:
-		# Check for error
-		post_components = post.split('#')
-		if (post_components[1] == 'Error'):
-			print 'Error: ' + post_components[2]
-			continue
-
-		postInfoString = post.split('|')[0]
-		postContentString = post.split('|')[1]
-		readerDB.insertPost(postInfoString, postContentString)
-	print "Database updated!"
-
-	return MSG_SUCCESS
 	
 # Send a stream of data to server, while controlling when the client
 # should continue sending. Uses the reader socket to send messages.
@@ -586,9 +623,9 @@ sock.send(intro_message)
 print "Sent message: ", intro_message
 
 # Start the listening thread
-print "Starting listening thread..."
-listenThread = ListenThread(sock)
-listenThread.start()
+print "Starting background thread..."
+backgroundThread = BackgroundThread(sock)
+backgroundThread.start()
 
 # Run the reader
 commands = ['exit', 'help', 'display', 'post_to_forum', 'read_post']
@@ -615,8 +652,19 @@ while (not reader_exit_req):
 		if (len(user_input) < 3):
 			print "Usage: display [book_name] [page_number]"
 			continue
+
 		bookname = user_input[1]
 		pagenum = int(user_input[2])
+
+		currentBookname = bookname
+		currentPagenumber = pagenum
+
+		# Set current command in backgroundthread
+		backgroundThread.currentCommand = user_input[0]
+
+		# Check whether database is updated
+		while (not backgroundThread.updateDBComplete):
+			time.sleep(0.001)
 		
 		# Display the page
 		resp = displayPage(bookname, pagenum)
@@ -625,9 +673,6 @@ while (not reader_exit_req):
 		if (resp != MSG_SUCCESS):
 			print "Could not display page. %s" % resp
 			continue
-
-		currentBookname = bookname
-		currentPagenumber = pagenum
 
 		# Request new posts from same page if opmode is 'pull' mode
 
@@ -643,6 +688,9 @@ while (not reader_exit_req):
 		if (len(user_input) < 3):
 			print "Usage: post_to_forum [line number] [post content]"
 			continue
+
+		# Set current command in backgroundthread
+		backgroundThread.currentCommand = user_input[0]
 
 		# Check if given line number is valid
 		try:
@@ -672,8 +720,12 @@ while (not reader_exit_req):
 		if (len(user_input) < 2):
 			print "Usage: read_post [line number]"
 			continue
+
+		# Set current command in backgroundthread
+		backgroundThread.currentCommand = user_input[0]
+
 		postsLine = int(user_input[1])
-	
+
 		# Check if currentBookname is initialised
 		if (currentBookname == ""):
 			print "Uncertain book. Use the command 'display' to initialise."
@@ -681,15 +733,6 @@ while (not reader_exit_req):
 
 		# Display posts at the current book, page, and line
 		displayPosts(currentBookname, currentPagenumber, postsLine)
-
-	# Update the database with server
-	elif (user_input[0] == 'serversync'):
-
-		resp = syncAllPosts()
-
-		# Examine if posts were successfully updated
-		if (resp != MSG_SUCCESS):
-			print "Could not update posts. %s" % resp
 	
 	# Unknown command
 	else:
@@ -697,5 +740,5 @@ while (not reader_exit_req):
 
 # close the connection
 print "Shutting down reader..."
-listenThread.event.set()
+backgroundThread.event.set()
 print "Exiting..."

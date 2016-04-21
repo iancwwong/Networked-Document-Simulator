@@ -7,30 +7,11 @@ import threading
 import random
 from sys import argv
 import os
+import time
 
 # ----------------------------------------------------
 # CLASSES
 # ----------------------------------------------------
-
-# This class represents a client from the server's perspective
-class ClientObj(object):
-
-	# Constructor given the client's username, mode, and socket
-	def __init__(self, sock, addr):
-		self.user_name = ""
-		self.opmode = ""
-		self.sock = sock
-		self.addr = addr
-	
-	# Send a message to the client
-	def sendmsg(msg):
-		self.sock.send(msg)
-
-	# Show details of client
-	def showDetails():
-		print "Username: \t",self.user_name
-		print "Operation mode: \t",self.opmode
-		print "Address: \t",self.addr
 
 # This class represents a book
 class Book(object):
@@ -211,6 +192,16 @@ class ServerDB(object):
 	# Return a list of post IDs for a particular book and page
 	def getPostsID(self, bookName, pageNum):
 
+		# Check bookname and pagenum validity
+		try:
+			if (not books[bookName].hasPage(pageNum)):
+				errorStr = "Page '%d' not found." % pageNum
+				return (self.OP_FAILURE, errorStr)
+
+		except KeyError:
+			errorStr = "Book '%s' not found." % bookName
+			return (self.OP_FAILURE, errorStr)			
+
 		# Loop through all posts, adding those that match the criteria to the final list
 		postIDs = []
 		for postID in self.db.keys():
@@ -293,6 +284,26 @@ class MessagePusher(object):
 	def pushPost(self, postDataStr):
 		for thread in self.clientThreads:
 			thread.pushPost(postDataStr)
+
+# This class represents a client from the server's perspective
+class ClientObj(object):
+
+	# Constructor given the client's username, mode, and socket
+	def __init__(self, sock, addr):
+		self.user_name = ""
+		self.opmode = ""
+		self.sock = sock
+		self.addr = addr
+	
+	# Send a message to the client
+	def sendmsg(msg):
+		self.sock.send(msg)
+
+	# Show details of client
+	def showDetails():
+		print "Username: \t",self.user_name
+		print "Operation mode: \t",self.opmode
+		print "Address: \t",self.addr
 
 # This is the thread that is executed when a server serves a single client
 class ClientThread(threading.Thread):
@@ -391,6 +402,9 @@ class ClientThread(threading.Thread):
 				# Send the success sresponse back to the client
 				self.client.sock.send('#UploadSuccess')
 
+				# Delay so client receives success message
+				time.sleep(0.001)
+
 				# Trigger the messagePusher to push the new post
 				resp, dataStr = serverDB.getPostAsStr(int(result))
 				messagePusher.pushPost(dataStr)
@@ -406,6 +420,8 @@ class ClientThread(threading.Thread):
 
 				# Get a list of all post ID's for the associated page/book,
 				resp, result = serverDB.getPostsID(bookName, pageNum)
+				print "Status:", resp
+				print "Result:", result
 
 				# Check if any errors retrieving post ids
 				if (resp == serverDB.OP_FAILURE):
@@ -493,7 +509,7 @@ class ClientThread(threading.Thread):
 		if (self.client.opmode != "push"):
 			return
 
-		self.client.sock.send("#NewSinglePost" + postDataStr)
+		self.client.sock.send("#NewSinglePost" + postDataStr, BUFFER_SIZE)
 		print "Pushed message to client."
 
 	# Send a stream of data to client, while controlling when the server
@@ -529,7 +545,7 @@ class ClientThread(threading.Thread):
 		for rs in read_sockets:
 			if (rs == self.client.sock):
 				data = self.client.sock.recv(bufferSize)
-				return data
+				return data			
 
 # ----------------------------------------------------
 # MAIN
