@@ -171,7 +171,8 @@ class BackgroundThread(threading.Thread):
 		threading.Thread.__init__(self)
 		self.event = threading.Event()		# for terminating thread
 		self.currentCommand = ""		# Used to keep track of current user command
-		self.updateDBComplete = False
+		self.command_changed = False		# For terminating timer early
+		self.updateDBComplete = False		# Signalling the 'display' process
 
 	# Execute thread - constantly listen for messages
 	# from the connected server
@@ -189,6 +190,9 @@ class BackgroundThread(threading.Thread):
 		# Pull mode - carry out appropriate procedures depending on current command		
 		elif (opmode == 'pull'):
 			while not self.event.isSet():
+
+				# Set the command to be unchanged
+				self.command_changed = False
 				
 				# Display command:
 				if (self.currentCommand == 'display'):
@@ -205,83 +209,21 @@ class BackgroundThread(threading.Thread):
 					# Delay so display can be carried out
 					time.sleep(0.0015)
 
-					# Set back to false, and proceed with timer
+					# Set db updated back to false
 					self.updateDBComplete = False
-					time.sleep(poll_interval - 0.0015)
+
+					# Terminate timer when new command is issued
+					sleepIntervals = int((poll_interval - 0.0015) / 0.0001)
+					for i in range(0, sleepIntervals):
+						if (self.command_changed):
+							break
+						time.sleep(0.0001)
 
 
-	# Request to find new posts for a particular bookname and page number
-	def updateLocalPosts(self, bookname, pagenum):
-
-		# Prepare return message
-		returnMsg = ""
-
-		# Request for a list of postID's that are associated with the bookname 
-		# and page number
-		reqStr = "#GetPostsIDReq#" + bookname + '#' + str(pagenum)
-		sock.send(reqStr)
-
-		print "Sent ", reqStr
-
-		# Listen for response from server
-		# Format: '#GetPostsIDResp#[Postid],[Postid]...'
-		msg = selectRecv(BUFFER_SIZE)
-		while (msg == ""):
-			msg = selectRecv(BUFFER_SIZE)
-		msg_components = msg.split('#')
-		if (msg_components[1] == 'Error'):
-			return 'Error: ' + msg_components[2]
-
-		# Extract list of postID's that are sent from server
-		serverPostIDs = msg_components[2].split(',')
-	
-		# Check whether there are any post IDs
-		if (len(serverPostIDs) == 1 and serverPostIDs[0] == ''):
-			return MSG_SUCCESS
-
-		serverPostIDs = [ int(postID) for postID in serverPostIDs ]		# Convert all into ints
-
-		# Get a list of ID's that are in the list from the server, but
-		# not owned locally at reader
-		unknownPostIDs = [ postID for postID in serverPostIDs if postID not in readerDB.getPostIDs(bookname, pagenum) ]
-
-		# Check if any posts are needed to be downloaded
-		if (len(unknownPostIDs) == 0):
-			return MSG_SUCCESS
-
-		# Download the posts for each of these unknown post ID's'
-		# Construct the string to send to server
-		downloadReqStr = "#GetPostsReq#"
-		for i in range(0, len(unknownPostIDs)):
-			downloadReqStr = downloadReqStr + str(unknownPostIDs[i])
-			if (i < len(unknownPostIDs) - 1):
-				downloadReqStr = downloadReqStr + ','
-		sock.send(downloadReqStr)
-
-		# Listen for server response
-		listenFor('GetPostsResp')
-
-		# Receive the new posts as a stream
-		# Each post will be of format:
-		# '#PostInfo...|#PostContent'
-		# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
-		# postContentString: 	'#PostContent#Id#Content'
-		newPosts = receiveStream('BeginGetPostsResp', 'PostRcvd', 'EndGetPostsResp')
-
-		# Insert each post into the database
-		for post in newPosts:
-			# Check for error
-			post_components = post.split('#')
-			if (post_components[1] == 'Error'):
-				print 'Error: ' + post_components[2]
-				continue
-
-			postInfoString = post.split('|')[0]
-			postContentString = post.split('|')[1]
-			readerDB.insertPost(postInfoString, postContentString)
-
-		print "There are new posts!"
-		return MSG_SUCCESS
+	# Indicate that the command has changed (not necessarily a different command)
+	def setCommand(self, newCommand):
+		self.currentCommand = newCommand
+		self.command_changed = True
 
 # This class is the thread that runs when reader is listening for input from server
 # NOTE: All messages sent by server should start with '#', followed by a phrase
@@ -689,7 +631,11 @@ def main():
 		user_input = user_input.split(' ')
 
 		# Send an exit message to server before shutting down reader
-		if (user_input[0] == 'exit' or user_input[0] == 'q'):	
+		if (user_input[0] == 'exit' or user_input[0] == 'q'):
+
+			# Set current command in backgroundthread
+			backgroundThread.setCommand(user_input[0])
+				
 			print "Saying goodbye to server..."
 			exit_message = "#Exit#" + user_name
 			sock.send(exit_message)
@@ -697,6 +643,10 @@ def main():
 
 		# Print documentation of valid commands
 		elif (user_input[0] == 'help'):
+
+			# Set current command in backgroundthread
+			backgroundThread.setCommand(user_input[0])
+
 			print "Valid commands:"	
 			print commands
 
@@ -713,7 +663,7 @@ def main():
 			currentPagenumber = pagenum
 
 			# Set current command in backgroundthread
-			backgroundThread.currentCommand = user_input[0]
+			backgroundThread.setCommand(user_input[0])
 
 			# Check whether database is updated
 			while (not backgroundThread.updateDBComplete):
@@ -736,7 +686,7 @@ def main():
 				continue
 
 			# Set current command in backgroundthread
-			backgroundThread.currentCommand = user_input[0]
+			backgroundThread.setCommand(user_input[0])
 
 			# Check if given line number is valid
 			try:
@@ -772,7 +722,7 @@ def main():
 			postsLine = int(user_input[1])
 
 			# Set current command in backgroundthread
-			backgroundThread.currentCommand = user_input[0]
+			backgroundThread.setCommand(user_input[0])
 
 			# Display posts at the current book, page, and line
 			displayPosts(currentBookname, currentPagenumber, postsLine)

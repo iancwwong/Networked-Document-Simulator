@@ -460,6 +460,8 @@ class ClientThread(threading.Thread):
 			# Posts Request message received (to obtain information of posts through given ID's) in the format:
 			# '#GetPostsReq#[PostID],[PostID]...'
 			elif (msg_components[1] == 'GetPostsLocReq'):
+
+				print "Query obtained from client '%s'!" % self.client.user_name
 				
 				# Extract the information given
 				bookname = msg_components[2]
