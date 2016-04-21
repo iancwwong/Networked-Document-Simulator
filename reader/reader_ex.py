@@ -213,7 +213,7 @@ class BackgroundThread(threading.Thread):
 					self.updateDBComplete = False
 
 					# Terminate timer when new command is issued
-					sleepIntervals = int((poll_interval - 0.0015) / 0.0001)
+					sleepIntervals = int((poll_interval - 0.0015) / (0.0001 * 3))
 					for i in range(0, sleepIntervals):
 						if (self.command_changed):
 							break
