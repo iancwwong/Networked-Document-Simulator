@@ -414,12 +414,12 @@ class ClientThread(threading.Thread):
 
 				# Check if any errors inserting into database
 				if (resp == serverDB.OP_FAILURE):
-					uploadResp = "#Error#" + result
+					uploadResp = "#UploadPostResp#Error#" + result
 					self.client.sock.send(uploadResp)
 					continue
 
 				# Send the success sresponse back to the client
-				self.client.sock.send('#UploadSuccess')
+				self.client.sock.send('#UploadPostResp#Success')
 
 				# Delay so client receives success message
 				time.sleep(0.001)
@@ -455,39 +455,40 @@ class ClientThread(threading.Thread):
 						postsRespStr = postsRespStr + ','
 				self.client.sock.send(postsRespStr)
 
+				print "Sent ", postsRespStr
+
 			# Posts Request message received (to obtain information of posts through given ID's) in the format:
 			# '#GetPostsReq#[PostID],[PostID]...'
-			elif (msg_components[1] == 'GetPostsReq'):
+			elif (msg_components[1] == 'GetPostsLocReq'):
 				
 				# Extract the information given
-				postIDs = data.split('#GetPostsReq#')[1].split(',')
-				if (len(postIDs) > 0 and postIDs[0] != ''):
-					postIDs = [ int(postID) for postID in postIDs ]
+				bookname = msg_components[2]
+				pagenum = int(msg_components[3])
+				readerPostIDs = msg_components[4].split(',')
 
-				# Construct the list of strings to send back (ie translating
-				# all the posts given by their id's into formatted strings
-				# into the format:
-				# '#PostInfo...|#PostContent'
-				# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
-				# postContentString: 	'#PostContent#Id#Content'
-				postStrings = []
-				for postID in postIDs:
-					resp, result = serverDB.getPostAsStr(postID)
+				# Convert the list of postID's into a list of ints (from strings)
+				if (len(readerPostIDs) > 0 and readerPostIDs[0] != ''):
+					readerPostIDs = [ int(postID) for postID in readerPostIDs ]
 
-					# Error obtaining post - report it
-					if (resp == serverDB.OP_FAILURE):
-						errorStr = '#Error#' + resp
-						postStrings.append(errorStr)
-						continue
+				# Get a list of post ID's which are associated to the book and page
+				resp, result = serverDB.getPostsID(bookname, pagenum)
+				
+				# Check for any errors
+				if (resp != serverDB.OP_SUCCESS):
+					# Add the error into the send list
+					errorStr = "#Error#" + result
+					sendList.append(errorStr)
+				else:
+					# Get the list of ID's that are NOT owned by reader
+					serverPostIDs = result
+					unknownPostIDs = [ postID for postID in serverPostIDs if postID not in readerPostIDs ]
+					sendList = [ serverDB.getPostAsStr(postID)[1] for postID in unknownPostIDs ]
 
-					# Send the post string to client
-					postStrings.append(result)
-
-				# Send all the posts as a stream
-				self.sendStream(postStrings, 'GetPostsResp', 'BeginGetPostsResp', 'PostRcvd',  'EndGetPostsResp')				
+				# Send all the unknown posts as a stream
+				self.sendStream(sendList, 'GetPostsLocResp', 'BeginGetPostsLocResp', 'NewPostRcvd',  'EndGetPostsLocResp')				
 			
 			# [Client push mode] Request for ALL post ID's that client does NOT have, received int he format:
-			# '#PostsSyncReq#[Postid],[Postid]...'
+			# '#PostsSyncIDReq#[Postid],[Postid]...'
 			elif (msg_components[1] == 'SyncPostsReq'):
 				
 				# Extract the list of postID's that client has
@@ -501,13 +502,11 @@ class ClientThread(threading.Thread):
 				# Obtain the list of id's that client does not have
 				unknownPostIDs = [ postID for postID in serverPostIDs if postID not in clientPostIDs ]
 
-				# Construct and send the response string
-				respStr = "#SyncPostsResp#"
-				for i in range(0,len(unknownPostIDs)):
-					respStr = respStr + str(unknownPostIDs[i])
-					if (i < len(unknownPostIDs)-1):
-						respStr = respStr + ','
-				self.client.sock.send(respStr)
+				# Convert each one into a string
+				unknownPosts = [ serverDB.getPostAsStr(postID)[1] for postID in unknownPostIDs ]
+
+				# Send back the unsynced posts as a stream
+				self.sendStream(unknownPosts, 'SyncPostsResp', 'BeginSyncPostsResp', 'NewPostRcvd', 'EndSyncPostsResp')
 	
 			else:
 				# Unknown type of message
