@@ -189,33 +189,7 @@ class BackgroundThread(threading.Thread):
 				print "Could not update posts. %s" % resp
 
 			# Indicate db is updated
-			self.updateDBComplete = True
-
-			# Constantly listen for messages from server
-			while not self.event.isSet():
-				
-				data = selectRecv(BUFFER_SIZE)
-				if (data == ""):
-					continue
-				data_components = data.split('#')
-
-				# Server is returning a new post, in the format:
-				# postString:		'#NewSinglePost#postInfoString...|postContentString'
-				# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
-				# postContentString: 	'#PostContent#Id#Content'
-				if (data_components[1] == 'NewSinglePost'):
-
-					# Accept the new post
-					postInfoStr = data.split('#NewSinglePost')[1].split('|')[0]
-					postContentStr = data.split('#NewSinglePost')[1].split('|')[1]
-					readerDB.insertPost(postInfoStr, postContentStr)
-					
-					# Determine whether to print out feedback message
-					postInfoStr = postInfoStr.split('#')
-					bookName = postInfoStr[4]
-					pageNum = int(postInfoStr[5])
-					if (bookName == currentBookname and pageNum == currentPagenumber):
-						print "There are new posts!"	
+			self.updateDBComplete = True	
 	
 		# Pull mode - carry out appropriate procedures depending on current command		
 		elif (opmode == 'pull'):
@@ -239,8 +213,6 @@ class BackgroundThread(threading.Thread):
 					# Set back to false, and proceed with timer
 					self.updateDBComplete = False
 					time.sleep(poll_interval - 0.0015)
-	
-		sock.close()
 
 	# Syncs ALL posts from this reader with server
 	def syncAllPosts(self):
@@ -367,7 +339,50 @@ class BackgroundThread(threading.Thread):
 			readerDB.insertPost(postInfoString, postContentString)
 
 		print "There are new posts!"
-		return MSG_SUCCESS		
+		return MSG_SUCCESS
+
+# This class is the thread that runs when reader is listening for input from server
+# NOTE: All messages sent by server should start with '#', followed by a phrase
+# that helps reader identify what message it is
+class ListenThread(threading.Thread):
+
+	# Constructor given the socket connected to the server
+	def __init__(self,socket):
+		threading.Thread.__init__(self)
+		self.event = threading.Event()
+		self.socket = socket
+
+	# Execute thread - constantly listen for messages
+	# from the connected server
+	def run(self):
+
+		# Constantly listen for messages until event is set
+		while not self.event.isSet():
+				
+			data = selectRecv(BUFFER_SIZE)
+			if (data == ""):
+				continue
+			data_components = data.split('#')
+
+			# Server is returning a new post, in the format:
+			# postString:		'#NewSinglePost#postInfoString...|postContentString'
+			# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
+			# postContentString: 	'#PostContent#Id#Content'
+			if (data_components[1] == 'NewSinglePost'):
+
+				# Accept the new post
+				postInfoStr = data.split('#NewSinglePost')[1].split('|')[0]
+				postContentStr = data.split('#NewSinglePost')[1].split('|')[1]
+				readerDB.insertPost(postInfoStr, postContentStr)
+				
+				# Determine whether to print out feedback message
+				postInfoStr = postInfoStr.split('#')
+				bookName = postInfoStr[4]
+				pageNum = int(postInfoStr[5])
+				if (bookName == currentBookname and pageNum == currentPagenumber):
+					print "There are new posts!"
+			
+		sock.close()		
 	
 # ----------------------------------------------------
 # FUNCTIONS
@@ -616,10 +631,12 @@ print "Successfully connected to server!"
 intro_message = "#Intro#" + user_name + "#" + opmode + "#" + str(poll_interval)
 sock.send(intro_message)
 
-# Start the listening thread
-print "Starting background thread..."
+# Start the background and listening threads
+print "Starting background threads..."
 backgroundThread = BackgroundThread(sock)
 backgroundThread.start()
+listenThread = ListenThread(sock)
+listenThread.start()
 
 # Run the reader
 commands = ['exit', 'help', 'display', 'post_to_forum', 'read_post']
@@ -658,6 +675,7 @@ while (not reader_exit_req):
 
 		# Check whether database is updated
 		while (not backgroundThread.updateDBComplete):
+			print "Update complete status: ", backgroundThread.updateDBComplete
 			time.sleep(0.001)
 		
 		# Display the page
@@ -735,4 +753,5 @@ while (not reader_exit_req):
 # close the connection
 print "Shutting down reader..."
 backgroundThread.event.set()
+listenThread.event.set()
 print "Exiting..."

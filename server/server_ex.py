@@ -289,6 +289,16 @@ class MessagePusher(object):
 			for thread in self.pushThreads:
 				thread.pushPost(postDataStr)
 
+	# Update the pushThreads by adding those clients who are in 'push' mode
+	def updatePushList(self):
+		self.pushThreads = [ thread for thread in self.clientThreads if thread.client.opmode == 'push' ]
+
+	# Remove a particular thread from the list of client threads,
+	# and update push list
+	def removeClientThread(self, threadToRemove):
+		self.clientThreads.remove(threadToRemove)
+		self.updatePushList()
+
 # This class represents a client from the server's perspective
 class ClientObj(object):
 
@@ -352,15 +362,20 @@ class ClientThread(threading.Thread):
 				self.client.user_name = client_user_name
 				self.client.opmode = client_opmode
 		
-				print "Client details received."
-				print "Username: ",self.client.user_name
-				print "Opmode: ",self.client.opmode	
+				print "Client details received! Name: %s, Opmode: %s" % \
+							(self.client.user_name, self.client.opmode)
+			
+				# Update the push list
+				messagePusher.updatePushList()
 
 			# Clean exit message received
 			elif (msg_components[1] == "Exit"):
 				# Cut connection with client
 				self.listen_sockets.remove(self.client.sock)
 				self.client_stop = True
+
+				# indicate to message pusher to remove this particular client from list	of threads
+				messagePusher.removeClientThread(self)
 
 			# Display request received from client
 			elif (msg_components[1] == 'DisplayReq'):
@@ -500,6 +515,7 @@ class ClientThread(threading.Thread):
 
 		# Close the socket
 		self.client.sock.close()
+
 
 	# Send a single post to the client
 	# postDataStr: postInfoStr...'|postContentStr...
@@ -669,5 +685,4 @@ while True:
 
 			# Add to list of client threads
 			clientThreadList.append(clientThread)
-
 serversock.close()
