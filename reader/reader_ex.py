@@ -373,7 +373,7 @@ class ListenThread(threading.Thread):
 					# '#RelayStartChatResp#Accept#[BChatport]#[AUsername]#[AChatport]
 					if (accept):
 						print "You can now chat to '%s'!" % aUsername
-						print "You can do so using the command: 'chat_request %s [chat content]'" % aUsername
+						print "You can do so using the command: 'chat %s [chat content]'" % aUsername
 
 						# Send acceptance notification to server
 						# in the format: 
@@ -410,7 +410,7 @@ class ListenThread(threading.Thread):
 						bChatport = int(data_components[5])
 		
 						print "You can now start talking to '%s'!" % bUsername
-						print "You can do so using the command: 'chat_request %s [chat content]'" % bUsername
+						print "You can do so using the command: 'chat %s [chat content]'" % bUsername
 
 						# Add client B to list of chat friends
 						chatClients[bUsername] = (bIP, bChatport)
@@ -463,6 +463,12 @@ class ChatThread(threading.Thread):
 	def run(self):
 		while not self.event.isSet():
 			pass
+
+	# Sends a message over udp to a particular targetInfo: (targetIP, targetPortnum)
+	def sendChatMessage(self, chatMessage, targetInfo):
+		targetIP, targetPortnum = targetInfo
+		print "Sending '%s' to (%s, %d)" % (chatMessage, targetIP, targetPortnum)
+
 		
 	
 # ----------------------------------------------------
@@ -868,6 +874,28 @@ def main():
 			
 					# Submit request to initiate chat session
 					reqChatSession(targetUser)
+
+				# Send a chat message to a particular client
+				elif (user_input [0] == 'chat'):
+					if (len(user_input) < 3):
+						print "Usage: chat [username] [message]"
+						continue
+		
+					# Parse the information
+					chatTarget = user_input[1]
+					chatMessage = ' '.join(user_input[2:])
+
+					# Check if target exists
+					try:
+						chatTargetInfo = chatClients[chatTarget]
+						chatThread.sendChatMessage(chatMessage, chatTargetInfo)
+					
+						# Set current command in backgroundthread
+						backgroundThread.setCommand(user_input[0])
+
+					except KeyError:
+						print "Error: Chat session with '%s' not instantiated." % chatTarget
+						print "Use 'chat_request' command to initiate chat session."
 
 				# Unknown command
 				else:
