@@ -611,7 +611,7 @@ def main():
 	print "Successfully connected to server!"
 
 	# Send intro message with info about this client
-	intro_message = "#Intro#" + user_name + "#" + opmode + "#" + str(poll_interval)
+	intro_message = "#Intro#" + user_name + "#" + opmode + "#" + str(ip_addr)
 	sock.send(intro_message)
 
 	# Start the background and listening threads

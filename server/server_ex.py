@@ -272,9 +272,8 @@ class ServerDB(object):
 		self.post_ids.append(new_post_id)
 		return new_post_id
 
-# This class is responsible for holding and pushing messages to clients
-# Uses a list of clients
-class MessagePusher(object):
+# This class is responsible for iterating through list of clients, and performing action(s)
+class ClientThreadIterator(object):
 
 	# Constructor - given a list of client threads
 	def __init__(self, clientThreads):
@@ -306,6 +305,7 @@ class ClientObj(object):
 	def __init__(self, sock, addr):
 		self.user_name = ""
 		self.opmode = ""
+		self.ip_addr = ""
 		self.sock = sock
 		self.addr = addr
 	
@@ -357,16 +357,15 @@ class ClientThread(threading.Thread):
 			# Intro message received
 			if (msg_components[1] == "Intro"):
 				# Parse information about client
-				client_user_name = msg_components[2]
-				client_opmode = msg_components[3]
-				self.client.user_name = client_user_name
-				self.client.opmode = client_opmode
+				self.client.user_name = msg_components[2]
+				self.client.opmode = msg_components[3]
+				self.client.ip_addr = msg_components[4]
 		
-				print "Client details received! Name: %s, Opmode: %s" % \
-							(self.client.user_name, self.client.opmode)
+				print "Client details received! Name: %s, Opmode: %s, IP: %s" % \
+							(self.client.user_name, self.client.opmode, self.client.ip_addr)
 			
 				# Update the push list
-				messagePusher.updatePushList()
+				clientThreadIterator.updatePushList()
 
 			# Clean exit message received
 			elif (msg_components[1] == "Exit"):
@@ -375,7 +374,7 @@ class ClientThread(threading.Thread):
 				self.client_stop = True
 
 				# indicate to message pusher to remove this particular client from list	of threads
-				messagePusher.removeClientThread(self)
+				clientThreadIterator.removeClientThread(self)
 
 			# Display request received from client
 			elif (msg_components[1] == 'DisplayReq'):
@@ -424,9 +423,9 @@ class ClientThread(threading.Thread):
 				# Delay so client receives success message
 				time.sleep(0.001)
 
-				# Trigger the messagePusher to push the new post
+				# Trigger the clientThreadIterator to push the new post
 				resp, dataStr = serverDB.getPostAsStr(int(result))
-				messagePusher.pushPost(dataStr)
+				clientThreadIterator.pushPost(dataStr)
 
 			# Posts Request message received (to obtain post IDs for a particular book/page), in the format:
 			# '#GetPostsIDReq#[bookname]#[pagenum]'
@@ -510,6 +509,13 @@ class ClientThread(threading.Thread):
 				# Send back the unsynced posts as a stream
 				self.sendStream(unknownPosts, 'SyncPostsResp', 'BeginSyncPostsResp', 'NewPostRcvd', 'EndSyncPostsResp')
 	
+			# Client wants to request a chat session with another user
+			# in the format:
+			# '#StartChatReq#
+			elif (msg_components[1] == 'StartChatReq'):
+				
+				# Extract
+
 			else:
 				# Unknown type of message
 				reply_msg = "Invalid message: ", data
@@ -644,9 +650,9 @@ serverDB = ServerDB()
 #runDBTests()
 #exit()
 
-# Create the messagePusher object
+# Create the clientThreadIterator object
 print "Creating message pusher..."
-messagePusher = MessagePusher(clientThreadList)
+clientThreadIterator = ClientThreadIterator(clientThreadList)
 
 # Create the socket
 serversock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)		# TCP connection
