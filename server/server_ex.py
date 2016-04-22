@@ -298,6 +298,17 @@ class ClientThreadIterator(object):
 		self.clientThreads.remove(threadToRemove)
 		self.updatePushList()
 
+	# Return a ClientThread obj based on the client's username
+	# Assumes 'ClientThread.ClientObj.user_name' is initialised
+	def getClientThread(self, targetUsername):
+		# Loop through all the client threads
+		for thread in self.clientThreads:
+			if (thread.client.user_name == targetUsername):
+				return thread
+
+		# No thread with username found
+		return None		
+
 # This class represents a client from the server's perspective
 class ClientObj(object):
 
@@ -454,8 +465,6 @@ class ClientThread(threading.Thread):
 						postsRespStr = postsRespStr + ','
 				self.client.sock.send(postsRespStr)
 
-				print "Sent ", postsRespStr
-
 			# Posts Request message received (to obtain information of posts through given ID's) in the format:
 			# '#GetPostsReq#[PostID],[PostID]...'
 			elif (msg_components[1] == 'GetPostsLocReq'):
@@ -509,12 +518,66 @@ class ClientThread(threading.Thread):
 				# Send back the unsynced posts as a stream
 				self.sendStream(unknownPosts, 'SyncPostsResp', 'BeginSyncPostsResp', 'NewPostRcvd', 'EndSyncPostsResp')
 	
-			# Client wants to request a chat session with another user
+			# This client (A) wants to request a chat session with another user B
 			# in the format:
-			# '#StartChatReq#
+			# '#StartChatReq#[TargetUserName]#[PortNumToUse]'
 			elif (msg_components[1] == 'StartChatReq'):
 				
-				# Extract
+				# Extract the parameters
+				bUsername = msg_components[2]
+				aFreeport = msg_components[3]		# free port of client A
+
+				print "'%s' wants to talk to '%s' using port %s!" % (self.client.user_name, bUsername, aFreeport)
+
+				# Get the client thread with target username
+				bThread = clientThreadIterator.getClientThread(bUsername)
+
+				# Check whether target exists
+				if (bThread is None):
+					# Send back error string
+					errorStr = '#StartChatResp#Error#User does not exists.'
+					self.client.sock.send(errorStr)
+					continue
+				
+				# Get B's thread to relay the chat request
+				print "Relaying chat request to client %s..." % bUsername
+				bThread.relayStartChatReq(self.client.user_name, self.client.ip_addr, aFreeport)
+
+			# This client (B) sends back a notification for the acceptance/rejection of a chat invite
+			# in the format:
+			# '#RelayStartChatResp#Accept#[BFreeport]#[AUsername]#[AFreeport]
+			# 	OR
+			# '#RelayStartChatResp#Reject#[AUsername]
+			elif (msg_components[1] == 'RelayStartChatResp'):
+
+				# Check if accept or reject
+				if (msg_components[2] == 'Accept'):
+
+					# Compile necessary parameters for return message
+					bUsername = self.client.user_name
+					bIP = self.client.ip_addr
+					bFreeport = msg_components[3]
+					aUsername = msg_components[4]
+					aFreeport = msg_components[5]
+
+					# Get the clientThread with username belonging to client A
+					aThread = clientThreadIterator.getClientThread(aUsername)
+					
+					# Assume such a thread exists
+					print "%s has accepted the invitation! Forwarding response to %s..." % (bUsername, aUsername)
+				
+					# Get Client A's thread to send the chat acceptance message from this client (B)
+					aThread.startChat(True, bUsername, bIP, bFreeport, aFreeport)
+
+				# Send reject message
+				elif (msg_components[2] == 'Reject'):
+
+					# Get username and clientThread obj of rejected client
+					aUsername = msg_components[3]
+					aThread = clientThreadIterator.getClientThread(aUsername)
+					
+					# Send reject message
+					aThread.startChat(False)
 
 			else:
 				# Unknown type of message
@@ -532,6 +595,45 @@ class ClientThread(threading.Thread):
 
 		self.client.sock.send("#NewSinglePost" + postDataStr, BUFFER_SIZE)
 		print "Pushed message to client '%s'" % self.client.user_name
+
+	# Relay a start chat request to this particular client
+	# Format: '#RelayStartChatReq#[AUsername]#[AIP]#[AFreeport]'
+	# NOTE: Assumes this client is B, the one initiating chat request is A
+	#
+	def relayStartChatReq(self, aUsername, aIP, aFreeport):
+		
+		# Send message to client requesting for a chat from client A
+		reqStr = '#RelayStartChatReq#' + aUsername + '#' + aIP + '#' + aFreeport
+		self.client.sock.send(reqStr)
+
+	# Send back a response message, in the format:
+	# '#StartChatResp#Accept#[BUsername]#[BIP]#[BFreeport]#[AFreeport]
+	#   or
+	# '#StartChatResp#Reject#[BUsername]
+	# Args: True, bUsername, bIP, bFreeport, aFreeport
+	#   or: False, bUsername
+	# NOTE: bIP, bFreeport, and aFreeport are STRINGS
+	def startChat(self, *args):
+
+		# Rejected - send appropriate string
+		if (args[0] == False):
+			respStr = '#StartChatResp#Reject#' + self.client.user_name
+			self.client.sock.send(respStr)
+
+		# This client (B) accepted client A's chat invitation
+		elif (args[0] == True):
+			
+			bUsername = args[1]
+			bIP = args[2]
+			bFreeport = args[3]
+			aFreeport = args[4]
+
+			# Construct and send the appropriate chat response string
+			respStr = '#StartChatResp#Accept#' + bUsername + '#' + \
+					bIP + '#' + bFreeport + '#' + aFreeport
+
+			self.client.sock.send(respStr)
+			
 
 	# Send a stream of data to client, while controlling when the server
 	# should continue sending

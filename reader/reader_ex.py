@@ -356,7 +356,94 @@ class ListenThread(threading.Thread):
 
 					print "There are new posts for this page!"
 
+				# Server is requesting for this reader (B) to start a chat with another reader (A)
+				# with a message of format:
+				# '#RelayStartChatReq#[AUsername]#[AIP]#[AFreeport]'
+				elif (data_components[1] == 'RelayStartChatReq'):
+
+					# Extract data
+					aUsername = data_components[2]
+					aIP = data_components[3]
+					aFreeport = int(data_components[4])
+					
+					# Prompt user whether to accept or reject the chat, and execute appropriately
+					accept = self.promptStartChat(aUsername)
+
+					# Send an acceptance notification to server in the format:
+					# '#RelayStartChatResp#Accept#[BFreeport]#[AUsername]#[AFreeport]
+					if (accept):
+						print "You can now chat to '%s'!" % aUsername
+						print "You can do so using the command: 'chat_request %s [chat content]'" % aUsername
+
+						# Get a free port number
+						freePortnum = findFreePortnum(aFreeport)
+
+						# Send acceptance notification to server
+						# in the format: 
+						acceptStr = '#RelayStartChatResp#Accept#' + str(freePortnum) + \
+								'#' + aUsername + '#' + str(aFreeport)
+						sock.send(acceptStr)
+
+						# chat freePortnum aIP aFreeport
+
+					# Send a reject notification to server in format:
+					# '#RelayStartChatResp#Reject#[AUsername]
+					else:
+						print "Rejected chat with '%s'!" % aUsername
+						rejectStr = '#RelayStartChatResp#Reject#' + aUsername
+						sock.send(rejectStr)
+
+				# Server is responding with a response from Client B, who was invited to a chat,
+				# with format:
+				# '#StartChatResp#Accept#[BUsername]#[BIP]#[BFreeport]#[AFreeport]
+				#   or
+				# '#StartChatResp#Reject#[BUsername]
+				#   or
+				# '#StartChatResp#Error#[Error msg]
+				elif (data_components[1] == 'StartChatResp'):
+	
+					# Obtain username of client B
+					bUsername = data_components[3]
+					
+					# Check if accepted
+					if (data_components[2] == 'Accept'):
+
+						# Obtain other parameters
+						bIP = data_components[4]
+						bFreeport = data_components[5]
+						aFreeport = data_components[6]
+		
+						print "You can now start talking to '%s'!" % bUsername
+						print "You can do so using the command: 'chat_request %s [chat content]'" % bUsername
+
+						# chat aFreeport bIP bFreeport
+						
+					elif (data_components[2] == 'Reject'):
+						print bUsername + ' rejected your invitation to chat.'
+
+					# Error with client B
+					elif (data_components[2] == 'Error'):
+						print "Error: " + data_components[3]
+
+				# Unknown message
+				else:
+					print 'Unknown message received: %s"' % data
+
 		sock.close()
+
+	# Prompt the user (client B) whether they want to start a chat conversation
+	# with client A of given name 'aUsername'		
+	def promptStartChat(self, aUsername):
+		user_resp = ""
+
+		# Prevent reading from main
+		print aUsername + ' wants to chat with you! Accept? [y/n]'
+		user_input = raw_input('> ')
+		if (user_input == 'y'):
+			user_resp = True
+		else:
+			user_resp = False
+		return user_resp
 	
 # ----------------------------------------------------
 # FUNCTIONS
@@ -480,6 +567,19 @@ def displayPosts(bookName, pageNum, lineNum):
 			# Set the post to be read in the database
 			readerDB.setRead(postid)
 
+# Submit a request to initiate a chat session with a given username
+# in the format:
+# '#StartChatReq#[TargetUserName]#[PortNumToUse]'
+def reqChatSession(targetUser):
+
+	# Obtain a port number that can be used on this machine
+	freePortNum = findFreePortnum(sock.getsockname()[1])
+	print "Free port:",freePortNum
+
+	# Construct and send a chat request string
+	reqStr = '#StartChatReq#' + targetUser + '#' + str(freePortNum)
+	sock.send(reqStr)
+
 # Send a stream of data to server, while controlling when the client
 # should continue sending. Uses the reader socket to send messages.
 # Note: Tacks on a '#' to endMsg and ackPhrase to adhere to message format rules
@@ -551,6 +651,15 @@ def selectRecv(bufferSize):
 			data = sock.recv(bufferSize)
 			return data
 
+# Find a port number that is not in use
+# Assumes the given portnum is already being used
+def findFreePortnum(forbiddenPortnum):
+	tempSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) 	#UDP
+	tempSock.bind(('',0))
+	freePortnum = tempSock.getsockname()[1]
+	tempSock.close()
+	return freePortnum
+
 # ----------------------------------------------------
 # MAIN PROCEDURE
 # ----------------------------------------------------
@@ -575,7 +684,7 @@ def main():
 	poll_interval = int(poll_interval_str)
 
 	# Initialise other global vars
-	lock = threading.Lock()
+	lock = threading.Lock()				# When reading and writing to terminal involving raw_input
 	currentBookname = ""
 	currentPagenumber = 0
 	MSG_SUCCESS = 'OK'
@@ -611,7 +720,8 @@ def main():
 	print "Successfully connected to server!"
 
 	# Send intro message with info about this client
-	intro_message = "#Intro#" + user_name + "#" + opmode + "#" + str(ip_addr)
+	# Format: '#Intro#[Username]#[Opmode]#[IP addr]
+	intro_message = "#Intro#" + user_name + "#" + opmode + "#" + str(socket.gethostbyname(socket.getfqdn()))
 	sock.send(intro_message)
 
 	# Start the background and listening threads
@@ -623,113 +733,133 @@ def main():
 
 	# Run the reader
 	commands = ['exit', 'help', 'display', 'post_to_forum', 'read_post']
+	listen_sockets = [sys.stdin]
 	reader_exit_req = False
 	while (not reader_exit_req):
-		print ""	# formatting
-
-		user_input = raw_input('> ')
-		user_input = user_input.split(' ')
-
-		# Send an exit message to server before shutting down reader
-		if (user_input[0] == 'exit' or user_input[0] == 'q'):
-
-			# Set current command in backgroundthread
-			backgroundThread.setCommand(user_input[0])
-				
-			print "Saying goodbye to server..."
-			exit_message = "#Exit#" + user_name
-			sock.send(exit_message)
-			reader_exit_req = True
-
-		# Print documentation of valid commands
-		elif (user_input[0] == 'help'):
-
-			# Set current command in backgroundthread
-			backgroundThread.setCommand(user_input[0])
-
-			print "Valid commands:"	
-			print commands
-
-		# Display the page of the specified book
-		elif (user_input[0] == 'display'):
-			if (len(user_input) < 3):
-				print "Usage: display [book_name] [page_number]"
-				continue
-
-			bookname = user_input[1]
-			pagenum = int(user_input[2])
-
-			currentBookname = bookname
-			currentPagenumber = pagenum
-
-			# Set current command in backgroundthread
-			backgroundThread.setCommand(user_input[0])
-
-			# Check whether database is updated
-			while (not backgroundThread.updateDBComplete):
-				time.sleep(0.001)
-		
-			# Request to display the page
-			reqDisplayPage(bookname, pagenum)
-
-		# Send a new post to the server
-		elif (user_input[0] == 'post_to_forum'):
-
-			# Check if currentBookname/cuirrentPagenum is initialised
-			if (currentBookname == "" or currentPagenumber == ""):
-				print "Uncertain book and page. Use the command 'display' to initialise."
-				continue
-
-			# Check if command is used properly
-			if (len(user_input) < 3):
-				print "Usage: post_to_forum [line number] [post content]"
-				continue
-
-			# Set current command in backgroundthread
-			backgroundThread.setCommand(user_input[0])
-
-			# Check if given line number is valid
-			try:
-				postLine = int(user_input[1])
-			except ValueError:
-				print "Invalid line number '%s' to post to." % user_input[1]
-				continue			
-
-			# Construct the post content string
-			postContent = ' '.join(user_input[2:])	
-
-			# Create the two strings for the post:
-			# postInfoString: 	'#NewPostInfo#SenderName#BookName#PageNumber#LineNumber'
-			# postContentString: 	'#NewPostContent#Content'
-			postInfoStr = "#NewPostInfo#" + user_name + "#" + currentBookname + "#" \
-					+ str(currentPagenumber) + "#" + str(postLine)
-			postContentStr = "#NewPostContent#" + postContent
-
-			sendNewPost(postInfoStr, postContentStr)			
-
-		# Display the posts for a particular line number on the current book and page
-		elif (user_input[0] == 'read_post'):
-			if (len(user_input) < 2):
-				print "Usage: read_post [line number]"
-				continue
-
-			# Check if currentBookname is initialised
-			if (currentBookname == ""):
-				print "Uncertain book. Use the command 'display' to initialise."
-				continue
-
-			# Obtain the line number
-			postsLine = int(user_input[1])
-
-			# Set current command in backgroundthread
-			backgroundThread.setCommand(user_input[0])
-
-			# Display posts at the current book, page, and line
-			displayPosts(currentBookname, currentPagenumber, postsLine)
 	
-		# Unknown command
-		else:
-			print "Unrecognised command:", user_input[0]
+		# Use select module to read from stdin
+		read_sockets, write_sockets, error_sockets = select.select(listen_sockets, [], [])
+		for rs in read_sockets:
+			if (rs == sys.stdin):
+
+				print ""	# formatting'
+				user_input = sys.stdin.readline().rstrip()
+				user_input = user_input.split(' ')
+
+				# Send an exit message to server before shutting down reader
+				if (user_input[0] == 'exit' or user_input[0] == 'q'):
+
+					# Set current command in backgroundthread
+					backgroundThread.setCommand(user_input[0])
+				
+					print "Saying goodbye to server..."
+					exit_message = "#Exit#" + user_name
+					sock.send(exit_message)
+					reader_exit_req = True
+
+				# Print documentation of valid commands
+				elif (user_input[0] == 'help'):
+
+					# Set current command in backgroundthread
+					backgroundThread.setCommand(user_input[0])
+
+					print "Valid commands:"	
+					print commands
+
+				# Display the page of the specified book
+				elif (user_input[0] == 'display'):
+					if (len(user_input) < 3):
+						print "Usage: display [book_name] [page_number]"
+						continue
+
+					bookname = user_input[1]
+					pagenum = int(user_input[2])
+
+					currentBookname = bookname
+					currentPagenumber = pagenum
+
+					# Set current command in backgroundthread
+					backgroundThread.setCommand(user_input[0])
+
+					# Check whether database is updated
+					while (not backgroundThread.updateDBComplete):
+						time.sleep(0.001)
+		
+					# Request to display the page
+					reqDisplayPage(bookname, pagenum)
+
+				# Send a new post to the server
+				elif (user_input[0] == 'post_to_forum'):
+
+					# Check if currentBookname/cuirrentPagenum is initialised
+					if (currentBookname == "" or currentPagenumber == ""):
+						print "Uncertain book and page. Use the command 'display' to initialise."
+						continue
+
+					# Check if command is used properly
+					if (len(user_input) < 3):
+						print "Usage: post_to_forum [line number] [post content]"
+						continue
+
+					# Set current command in backgroundthread
+					backgroundThread.setCommand(user_input[0])
+
+					# Check if given line number is valid
+					try:
+						postLine = int(user_input[1])
+					except ValueError:
+						print "Invalid line number '%s' to post to." % user_input[1]
+						continue			
+
+					# Construct the post content string
+					postContent = ' '.join(user_input[2:])	
+
+					# Create the two strings for the post:
+					# postInfoString: 	'#NewPostInfo#SenderName#BookName#PageNumber#LineNumber'
+					# postContentString: 	'#NewPostContent#Content'
+					postInfoStr = "#NewPostInfo#" + user_name + "#" + currentBookname + "#" \
+							+ str(currentPagenumber) + "#" + str(postLine)
+					postContentStr = "#NewPostContent#" + postContent
+
+					sendNewPost(postInfoStr, postContentStr)			
+
+				# Display the posts for a particular line number on the current book and page
+				elif (user_input[0] == 'read_post'):
+					if (len(user_input) < 2):
+						print "Usage: read_post [line number]"
+						continue
+
+					# Check if currentBookname is initialised
+					if (currentBookname == ""):
+						print "Uncertain book. Use the command 'display' to initialise."
+						continue
+
+					# Obtain the line number
+					postsLine = int(user_input[1])
+
+					# Set current command in backgroundthread
+					backgroundThread.setCommand(user_input[0])
+
+					# Display posts at the current book, page, and line
+					displayPosts(currentBookname, currentPagenumber, postsLine)
+	
+				# Start a chat session with given username
+				elif (user_input[0] == 'chat_request'):
+					if (len(user_input) < 2):
+						print "Usage: chat_request [username]"
+						continue
+
+					targetUser = user_input[1]
+			
+					# Set current command in backgroundthread
+					backgroundThread.setCommand(user_input[0])			
+			
+					# Submit request to initiate chat session
+					reqChatSession(targetUser)
+
+				# Unknown command
+				else:
+					print "Unrecognised command:", user_input[0]
 
 		# Delay: formatting
 		time.sleep(0.3)
