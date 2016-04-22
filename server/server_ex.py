@@ -525,9 +525,9 @@ class ClientThread(threading.Thread):
 				
 				# Extract the parameters
 				bUsername = msg_components[2]
-				aFreeport = msg_components[3]		# free port of client A
+				aChatport = msg_components[3]		# free port of client A
 
-				print "'%s' wants to talk to '%s' using port %s!" % (self.client.user_name, bUsername, aFreeport)
+				print "'%s' wants to talk to '%s' using port %s!" % (self.client.user_name, bUsername, aChatport)
 
 				# Get the client thread with target username
 				bThread = clientThreadIterator.getClientThread(bUsername)
@@ -541,11 +541,11 @@ class ClientThread(threading.Thread):
 				
 				# Get B's thread to relay the chat request
 				print "Relaying chat request to client %s..." % bUsername
-				bThread.relayStartChatReq(self.client.user_name, self.client.ip_addr, aFreeport)
+				bThread.relayStartChatReq(self.client.user_name, self.client.ip_addr, aChatport)
 
 			# This client (B) sends back a notification for the acceptance/rejection of a chat invite
 			# in the format:
-			# '#RelayStartChatResp#Accept#[BFreeport]#[AUsername]#[AFreeport]
+			# '#RelayStartChatResp#Accept#[BFreeport]#[AUsername]#[AChatport]
 			# 	OR
 			# '#RelayStartChatResp#Reject#[AUsername]
 			elif (msg_components[1] == 'RelayStartChatResp'):
@@ -556,9 +556,9 @@ class ClientThread(threading.Thread):
 					# Compile necessary parameters for return message
 					bUsername = self.client.user_name
 					bIP = self.client.ip_addr
-					bFreeport = msg_components[3]
+					bChatport = msg_components[3]
 					aUsername = msg_components[4]
-					aFreeport = msg_components[5]
+					aChatport = msg_components[5]
 
 					# Get the clientThread with username belonging to client A
 					aThread = clientThreadIterator.getClientThread(aUsername)
@@ -567,7 +567,7 @@ class ClientThread(threading.Thread):
 					print "%s has accepted the invitation! Forwarding response to %s..." % (bUsername, aUsername)
 				
 					# Get Client A's thread to send the chat acceptance message from this client (B)
-					aThread.startChat(True, bUsername, bIP, bFreeport, aFreeport)
+					aThread.startChat(True, bUsername, bIP, bChatport, aChatport)
 
 				# Send reject message
 				elif (msg_components[2] == 'Reject'):

@@ -364,27 +364,24 @@ class ListenThread(threading.Thread):
 					# Extract data
 					aUsername = data_components[2]
 					aIP = data_components[3]
-					aFreeport = int(data_components[4])
+					aChatport = int(data_components[4])
 					
 					# Prompt user whether to accept or reject the chat, and execute appropriately
 					accept = self.promptStartChat(aUsername)
 
 					# Send an acceptance notification to server in the format:
-					# '#RelayStartChatResp#Accept#[BFreeport]#[AUsername]#[AFreeport]
+					# '#RelayStartChatResp#Accept#[BChatport]#[AUsername]#[AChatport]
 					if (accept):
 						print "You can now chat to '%s'!" % aUsername
 						print "You can do so using the command: 'chat_request %s [chat content]'" % aUsername
 
-						# Get a free port number
-						freePortnum = findFreePortnum(aFreeport)
-
 						# Send acceptance notification to server
 						# in the format: 
-						acceptStr = '#RelayStartChatResp#Accept#' + str(freePortnum) + \
-								'#' + aUsername + '#' + str(aFreeport)
+						acceptStr = '#RelayStartChatResp#Accept#' + str(chatThread.chatPortnum) + \
+								'#' + aUsername + '#' + str(aChatport)
 						sock.send(acceptStr)
 
-						# chat freePortnum aIP aFreeport
+						chatClients[aUsername] = (aIP, aChatport)
 
 					# Send a reject notification to server in format:
 					# '#RelayStartChatResp#Reject#[AUsername]
@@ -395,7 +392,7 @@ class ListenThread(threading.Thread):
 
 				# Server is responding with a response from Client B, who was invited to a chat,
 				# with format:
-				# '#StartChatResp#Accept#[BUsername]#[BIP]#[BFreeport]#[AFreeport]
+				# '#StartChatResp#Accept#[BUsername]#[BIP]#[BChatport]
 				#   or
 				# '#StartChatResp#Reject#[BUsername]
 				#   or
@@ -410,13 +407,13 @@ class ListenThread(threading.Thread):
 
 						# Obtain other parameters
 						bIP = data_components[4]
-						bFreeport = data_components[5]
-						aFreeport = data_components[6]
+						bChatport = int(data_components[5])
 		
 						print "You can now start talking to '%s'!" % bUsername
 						print "You can do so using the command: 'chat_request %s [chat content]'" % bUsername
 
-						# chat aFreeport bIP bFreeport
+						# Add client B to list of chat friends
+						chatClients[bUsername] = (bIP, bChatport)
 						
 					elif (data_components[2] == 'Reject'):
 						print bUsername + ' rejected your invitation to chat.'
@@ -444,6 +441,29 @@ class ListenThread(threading.Thread):
 		else:
 			user_resp = False
 		return user_resp
+
+# This class represents the chat engine between this reader and another,
+# specified by their destination IP and destination port
+# NOTE: Assumes destPort is an int
+class ChatThread(threading.Thread):
+
+	# Constructor given the socket connected to the server
+	def __init__(self):
+		threading.Thread.__init__(self)
+		self.event = threading.Event()		# for stopping thread
+
+		# Create the UDP socket (bind to sourcePort, destination is (destIP, destPort))
+		self.chatSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+		self.chatSock.bind(('', 0))
+
+		# Set the chat port number
+		self.chatPortnum = self.chatSock.getsockname()[1]
+
+	# Running the chat thread
+	def run(self):
+		while not self.event.isSet():
+			pass
+		
 	
 # ----------------------------------------------------
 # FUNCTIONS
@@ -572,12 +592,8 @@ def displayPosts(bookName, pageNum, lineNum):
 # '#StartChatReq#[TargetUserName]#[PortNumToUse]'
 def reqChatSession(targetUser):
 
-	# Obtain a port number that can be used on this machine
-	freePortNum = findFreePortnum(sock.getsockname()[1])
-	print "Free port:",freePortNum
-
 	# Construct and send a chat request string
-	reqStr = '#StartChatReq#' + targetUser + '#' + str(freePortNum)
+	reqStr = '#StartChatReq#' + targetUser + '#' + str(chatThread.chatPortnum)
 	sock.send(reqStr)
 
 # Send a stream of data to server, while controlling when the client
@@ -651,15 +667,6 @@ def selectRecv(bufferSize):
 			data = sock.recv(bufferSize)
 			return data
 
-# Find a port number that is not in use
-# Assumes the given portnum is already being used
-def findFreePortnum(forbiddenPortnum):
-	tempSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) 	#UDP
-	tempSock.bind(('',0))
-	freePortnum = tempSock.getsockname()[1]
-	tempSock.close()
-	return freePortnum
-
 # ----------------------------------------------------
 # MAIN PROCEDURE
 # ----------------------------------------------------
@@ -674,6 +681,8 @@ def main():
 	global MSG_SUCCESS, BUFFER_SIZE
 	global lock
 	global opmode, poll_interval
+	global chatClients
+	global chatThread
 
 	# Extract information from arguments provided
 	if (len(argv) < 6):
@@ -688,6 +697,7 @@ def main():
 	currentBookname = ""
 	currentPagenumber = 0
 	MSG_SUCCESS = 'OK'
+	chatClients = {}
 
 	# Constants
 	BUFFER_SIZE = 1024
@@ -724,12 +734,14 @@ def main():
 	intro_message = "#Intro#" + user_name + "#" + opmode + "#" + str(socket.gethostbyname(socket.getfqdn()))
 	sock.send(intro_message)
 
-	# Start the background and listening threads
+	# Start the background, listen, and chat threads
 	print "Starting background threads..."
 	backgroundThread = BackgroundThread()
 	backgroundThread.start()
 	listenThread = ListenThread()
 	listenThread.start()
+	chatThread = ChatThread()
+	chatThread.start()
 
 	# Run the reader
 	commands = ['exit', 'help', 'display', 'post_to_forum', 'read_post']
@@ -868,6 +880,7 @@ def main():
 	print "Shutting down reader..."
 	backgroundThread.event.set()
 	listenThread.event.set()
+	chatThread.event.set()
 	print "Exiting..."
 
 # ----------------------------------------------------
