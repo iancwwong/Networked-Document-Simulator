@@ -262,7 +262,7 @@ class ListenThread(threading.Thread):
 					bookName = postInfoStr[4]
 					pageNum = int(postInfoStr[5])
 					if (bookName == currentBookname and pageNum == currentPagenumber):
-						print "There are new posts!"
+						print "There are new posts!\n"
 
 				# Server is returning a stream of page data to display
 				elif (data_components[1] == 'DisplayResp'):
@@ -315,7 +315,7 @@ class ListenThread(threading.Thread):
 					unsyncedPosts = receiveStream('BeginSyncPostsResp', 'NewPostRcvd', 'EndSyncPostsResp')
 
 					if (len(unsyncedPosts) == 0):
-						print "Database up to date!"
+						print "Database up to date!\n"
 						continue
 
 					# Insert each post into the database
@@ -324,7 +324,7 @@ class ListenThread(threading.Thread):
 						postContentStr = postData.split('|')[1]
 						readerDB.insertPost(postInfoStr, postContentStr)
 
-					print "Database updated!"
+					print "Database updated!\n"
 
 				# Server is replying with a stream of posts for a particular book and page
 				# that the user does NOT have
@@ -353,7 +353,7 @@ class ListenThread(threading.Thread):
 						postContentStr = postData.split('|')[1]
 						readerDB.insertPost(postInfoStr, postContentStr)
 
-					print "There are new posts for this page!"
+					print "There are new posts for this page!\n"
 
 				# Server is requesting for this reader (B) to start a chat with another reader (A)
 				# with a message of format:
@@ -388,6 +388,8 @@ class ListenThread(threading.Thread):
 						rejectStr = '#RelayStartChatResp#Reject#' + aUsername
 						sock.send(rejectStr)
 
+					print ""	# formatting
+
 				# Server is responding with a response from Client B, who was invited to a chat,
 				# with format:
 				# '#StartChatResp#Accept#[BUsername]#[BIP]#[BChatport]
@@ -419,6 +421,8 @@ class ListenThread(threading.Thread):
 					# Error with client B
 					elif (data_components[2] == 'Error'):
 						print "Error: " + data_components[3]
+
+					print ""	# Formatting
 
 				# Unknown message
 				else:
@@ -482,7 +486,7 @@ class ChatThread(threading.Thread):
 							continue
 
 						sender = msg_components[2]
-						chatMsg = msg_components[3:]
+						chatMsg = '#'.join(msg_components[3:])
 						print "'%s' says: %s" % (sender, chatMsg)	
 
 		print "Exiting chat thread..."
@@ -497,7 +501,11 @@ class ChatThread(threading.Thread):
 		# Send an encoded message string to targetInfo
 		msgStr = '#NewChatMessage#' + self.username + '#' + chatMessage
 		self.chatSock.sendto(msgStr, targetInfo)
-		print "Sent to (%s, %d)" % (targetIP, targetPortnum)
+		print "Sent!"
+
+	# Returns whether there is a client with the specified name that is available to chat
+	def hasChatClient(self, username):
+		return (username in self.chatClients.keys())
 
 # ----------------------------------------------------
 # MAIN FUNCTIONS
@@ -884,8 +892,9 @@ def main():
 				# Unknown command
 				else:
 					print "Unrecognised command:", user_input[0]
+				
+				time.sleep(0.3)		# Formatting
 				print ""
-				time.sleep(0.3)
 
 	# close the connection
 	print "Shutting down reader..."
