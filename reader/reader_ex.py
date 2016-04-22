@@ -219,7 +219,6 @@ class BackgroundThread(threading.Thread):
 							break
 						time.sleep(0.0001)
 
-
 	# Indicate that the command has changed (not necessarily a different command)
 	def setCommand(self, newCommand):
 		self.currentCommand = newCommand
@@ -380,13 +379,12 @@ class ListenThread(threading.Thread):
 						acceptStr = '#RelayStartChatResp#Accept#' + str(chatThread.chatPortnum) + \
 								'#' + aUsername + '#' + str(aChatport)
 						sock.send(acceptStr)
-
-						chatClients[aUsername] = (aIP, aChatport)
+						chatThread.chatClients[aUsername] = (aIP, aChatport)
 
 					# Send a reject notification to server in format:
 					# '#RelayStartChatResp#Reject#[AUsername]
 					else:
-						print "Rejected chat with '%s'!" % aUsername
+						print "Rejected chat with '%s'." % aUsername
 						rejectStr = '#RelayStartChatResp#Reject#' + aUsername
 						sock.send(rejectStr)
 
@@ -409,11 +407,11 @@ class ListenThread(threading.Thread):
 						bIP = data_components[4]
 						bChatport = int(data_components[5])
 		
-						print "You can now start talking to '%s'!" % bUsername
+						print "'%s' has accepted your chat invitation!" % bUsername
 						print "You can do so using the command: 'chat %s [chat content]'" % bUsername
 
 						# Add client B to list of chat friends
-						chatClients[bUsername] = (bIP, bChatport)
+						chatThread.chatClients[bUsername] = (bIP, bChatport)
 						
 					elif (data_components[2] == 'Reject'):
 						print bUsername + ' rejected your invitation to chat.'
@@ -459,53 +457,47 @@ class ChatThread(threading.Thread):
 		# Set the chat port number
 		self.chatPortnum = self.chatSock.getsockname()[1]
 
+		# Bind user name of reader to chat thread
+		self.username = user_name
+		
+		# Initiate dict of chat clients
+		self.chatClients = {}
+
 	# Running the chat thread
 	def run(self):
 		while not self.event.isSet():
-			pass
+			# Use select module to read from buffer
+			read_sockets, write_sockets, error_sockets = select.select([self.chatSock], [], [])
+			for rs in read_sockets:
+				if (rs == self.chatSock):
+					msg, addr = rs.recvfrom(BUFFER_SIZE)
+					if (msg != ""):
+						msg_components = msg.split('#')
+						
+						# Check validity of message
+						# should be of format:
+						# '#NewChatMessage#[sender]#[chatmsg]
+						if (len(msg_components) < 4):
+							# Something happened with message - ignore it
+							continue
+
+						sender = msg_components[2]
+						chatMsg = msg_components[3:]
+						print "'%s' says: %s" % (sender, chatMsg)	
+
+		print "Exiting chat thread..."
+		self.chatSock.close()
 
 	# Sends a message over udp to a particular targetInfo: (targetIP, targetPortnum)
+	# in the format:
+	# '#NewChatMessage#[sender]#[chatmsg]'
 	def sendChatMessage(self, chatMessage, targetInfo):
 		targetIP, targetPortnum = targetInfo
-		print "Sending '%s' to (%s, %d)" % (chatMessage, targetIP, targetPortnum)
-
 		
-	
-# ----------------------------------------------------
-# FUNCTIONS
-# ----------------------------------------------------
-
-def runDBTests():
-	# DEBUGGING
-
-	# Test inserting forum posts
-	# postInfoString: 	'#PostInfo#Id#SenderName#BookName#PageNumber#LineNumber'
-	# postContentString: 	'#PostContent#Id#Content'
-	postInfoStr = "#PostInfo#3093#iancwwong#shelley#2#9"
-	postContentStr = "#PostContent#3093#Why is this line blank?"
-	readerDB.insertPost(postInfoStr, postContentStr)
-
-	postInfoStr = "#PostInfo#3094#thetoxicguy#shelley#2#9"
-	postContentStr = "#PostContent#3094#Because the author wrote it that way, you retard?"
-	readerDB.insertPost(postInfoStr, postContentStr)
-
-	postInfoStr = "#PostInfo#2041#jasonng#exupery#3#4"
-	postContentStr = "#PostContent#2041#What's this line # talking about?"
-	readerDB.insertPost(postInfoStr, postContentStr)
-
-	postInfoStr = "#PostInfo#5699#mohawk#joyce#1#2"
-	postContentStr = "#PostContent#5699#Repetition of 'my' is used."
-	readerDB.insertPost(postInfoStr, postContentStr)
-
-	readerDB.setRead(5699)
-	print "Database:"
-	print readerDB.exportAsStr()
-	print ""
-
-	print readerDB.getPostIDs('shelley', 2, 9)
-	print ""
-
-	displayPosts('shelley', 2, 9)
+		# Send an encoded message string to targetInfo
+		msgStr = '#NewChatMessage#' + self.username + '#' + chatMessage
+		self.chatSock.sendto(msgStr, targetInfo)
+		print "Sent to (%s, %d)" % (targetIP, targetPortnum)
 
 # ----------------------------------------------------
 # MAIN FUNCTIONS
@@ -657,13 +649,6 @@ def receiveStream(startAckPhrase, ackPhrase, endMsg):
 		msgComponents = msg.split('#')
 	return recvList	
 
-# Listen for a particular message from the socket
-def listenFor(listenMsg):
-	msg = selectRecv(BUFFER_SIZE)
-	while (msg != '#' + listenMsg):
-		msg = self.selectRecv(BUFFER_SIZE)
-	pass	# terminate waiting
-
 # Use 'select' module to obtain data from buffer
 def selectRecv(bufferSize):
 	listen_sockets = [sock]
@@ -686,8 +671,7 @@ def main():
 	global currentBookname, currentPagenumber
 	global MSG_SUCCESS, BUFFER_SIZE
 	global lock
-	global opmode, poll_interval
-	global chatClients
+	global user_name, opmode, poll_interval
 	global chatThread
 
 	# Extract information from arguments provided
@@ -703,7 +687,6 @@ def main():
 	currentBookname = ""
 	currentPagenumber = 0
 	MSG_SUCCESS = 'OK'
-	chatClients = {}
 
 	# Constants
 	BUFFER_SIZE = 1024
@@ -718,10 +701,6 @@ def main():
 	# Initialise Reader Database
 	print "Initialising reader database..."
 	readerDB = ReaderDB()
-
-	# DEBUGGING
-	#runDBTests()
-	#exit()
 
 	# Prepare the socket
 	sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)	# TCP
@@ -760,7 +739,6 @@ def main():
 		for rs in read_sockets:
 			if (rs == sys.stdin):
 
-				print ""	# formatting'
 				user_input = sys.stdin.readline().rstrip()
 				user_input = user_input.split(' ')
 
@@ -870,10 +848,16 @@ def main():
 					targetUser = user_input[1]
 			
 					# Set current command in backgroundthread
-					backgroundThread.setCommand(user_input[0])			
+					backgroundThread.setCommand(user_input[0])
+
+					# Check if there is already a chat session with specified target
+					if (chatThread.hasChatClient(targetUser)):
+						print "You are already able to converse with '%s'!" % targetUser
+						continue
 			
 					# Submit request to initiate chat session
-					reqChatSession(targetUser)
+					reqChatSession(targetUser)	
+					print "Submitted request to chat with '%s'!" % targetUser
 
 				# Send a chat message to a particular client
 				elif (user_input [0] == 'chat'):
@@ -887,7 +871,7 @@ def main():
 
 					# Check if target exists
 					try:
-						chatTargetInfo = chatClients[chatTarget]
+						chatTargetInfo = chatThread.chatClients[chatTarget]
 						chatThread.sendChatMessage(chatMessage, chatTargetInfo)
 					
 						# Set current command in backgroundthread
@@ -900,9 +884,8 @@ def main():
 				# Unknown command
 				else:
 					print "Unrecognised command:", user_input[0]
-
-		# Delay: formatting
-		time.sleep(0.3)
+				print ""
+				time.sleep(0.3)
 
 	# close the connection
 	print "Shutting down reader..."

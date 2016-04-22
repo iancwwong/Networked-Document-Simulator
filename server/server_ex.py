@@ -617,7 +617,7 @@ class ClientThread(threading.Thread):
 
 		# Rejected - send appropriate string
 		if (args[0] == False):
-			respStr = '#StartChatResp#Reject#' + self.client.user_name
+			respStr = '#StartChatResp#Reject#' + args[1]	# bUsername
 			self.client.sock.send(respStr)
 
 		# This client (B) accepted client A's chat invitation
