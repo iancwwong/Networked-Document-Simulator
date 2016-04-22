@@ -525,7 +525,7 @@ class ClientThread(threading.Thread):
 	def pushPost(self, postDataStr):
 
 		self.client.sock.send("#NewSinglePost" + postDataStr, BUFFER_SIZE)
-		print "Pushed message to client '%s'",self.client.user_name
+		print "Pushed message to client '%s'" % self.client.user_name
 
 	# Send a stream of data to client, while controlling when the server
 	# should continue sending
