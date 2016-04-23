@@ -1,4 +1,8 @@
 == TODO list
 
-* [reader] Remove clients from chat list when they exit
-* [server] Include error check for usernames with the same name
+= Reader.py
+* Fix exit!!
+* Remove clients from chat list when they exit
+
+= Server.py
+* Include error check for usernames with the same name
