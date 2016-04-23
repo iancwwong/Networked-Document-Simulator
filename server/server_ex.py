@@ -275,10 +275,10 @@ class ServerDB(object):
 # This class is responsible for iterating through list of clients, and performing action(s)
 class ClientThreadIterator(object):
 
-	# Constructor - given a list of client threads
-	def __init__(self, clientThreads):
-		self.clientThreads = clientThreads
-		self.pushThreads = [ thread for thread in clientThreads if thread.client.opmode == 'push' ]
+	# Constructor
+	def __init__(self):
+		self.clientThreads = []
+		self.pushThreads = [ thread for thread in self.clientThreads if thread.client.opmode == 'push' ]
 
 	# Push a forum post to all clients operating in push mode
 	def pushPost(self, postDataStr):
@@ -290,7 +290,14 @@ class ClientThreadIterator(object):
 
 	# Update the pushThreads by adding those clients who are in 'push' mode
 	def updatePushList(self):
+		oldNumPushClients = len(self.pushThreads)
 		self.pushThreads = [ thread for thread in self.clientThreads if thread.client.opmode == 'push' ]
+		if (oldNumPushClients != len(self.pushThreads)):
+			print "Updated push list!"
+
+	# Add a client thread
+	def addClientThread(self, newClientThread):
+		self.clientThreads.append(newClientThread)
 
 	# Remove a particular thread from the list of client threads,
 	# and update push list
@@ -754,7 +761,7 @@ serverDB = ServerDB()
 
 # Create the clientThreadIterator object
 print "Creating message pusher..."
-clientThreadIterator = ClientThreadIterator(clientThreadList)
+clientThreadIterator = ClientThreadIterator()
 
 # Create the socket
 serversock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)		# TCP connection
@@ -785,9 +792,6 @@ while True:
 			# Run the thread
 			clientThread.start()
 
-			# Print confirmation message
-			print "Connection made with: ", addr
-
 			# Add to list of client threads
-			clientThreadList.append(clientThread)
+			clientThreadIterator.addClientThread(clientThread)
 serversock.close()
