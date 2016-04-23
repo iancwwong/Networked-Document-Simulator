@@ -400,7 +400,7 @@ class ClientThread(threading.Thread):
 				# Load parameters
 				bookname = msg_components[2]
 				pagenum = int(msg_components[3])
-				print "Client requested to print page %d from %s." % (pagenum, bookname)
+				print "%s requested to print page %d from %s." % (self.client.user_name, pagenum, bookname)
 
 				# Obtain a list of strings to send
 				displayMsg = []
@@ -476,7 +476,7 @@ class ClientThread(threading.Thread):
 			# '#GetPostsReq#[PostID],[PostID]...'
 			elif (msg_components[1] == 'GetPostsLocReq'):
 
-				print "Query obtained from client '%s'!" % self.client.user_name
+				print "Query for posts received from client '%s'!" % self.client.user_name
 				
 				# Extract the information given
 				bookname = msg_components[2]
@@ -507,6 +507,8 @@ class ClientThread(threading.Thread):
 			# [Client push mode] Request for ALL post ID's that client does NOT have, received int he format:
 			# '#PostsSyncIDReq#[Postid],[Postid]...'
 			elif (msg_components[1] == 'SyncPostsReq'):
+
+				print "Query for syncings posts from '%s'!" % self.client.user_name
 				
 				# Extract the list of postID's that client has
 				clientPostIDs = data.split('#SyncPostsReq#')[1].split(',')
@@ -522,8 +524,12 @@ class ClientThread(threading.Thread):
 				# Convert each one into a string
 				unknownPosts = [ serverDB.getPostAsStr(postID)[1] for postID in unknownPostIDs ]
 
+				print "Summary of posts received from '%s'. Forwarding new posts..." % self.client.user_name
+
 				# Send back the unsynced posts as a stream
 				self.sendStream(unknownPosts, 'SyncPostsResp', 'BeginSyncPostsResp', 'NewPostRcvd', 'EndSyncPostsResp')
+
+				print "New posts forwarded: ", unknownPostIDs
 	
 			# This client (A) wants to request a chat session with another user B
 			# in the format:
@@ -579,6 +585,8 @@ class ClientThread(threading.Thread):
 				# Send reject message
 				elif (msg_components[2] == 'Reject'):
 
+					print "%s has rejected the invitation. Forwarding response to %s..." % (bUsername, aUsername)
+
 					# Get username and clientThread obj of rejected client
 					aUsername = msg_components[3]
 					aThread = clientThreadIterator.getClientThread(aUsername)
@@ -589,6 +597,8 @@ class ClientThread(threading.Thread):
 			else:
 				# Unknown type of message
 				reply_msg = "Invalid message: ", data
+			
+			print ""	# formatting
 
 		# Close the socket
 		self.client.sock.close()
@@ -760,7 +770,6 @@ serverDB = ServerDB()
 #exit()
 
 # Create the clientThreadIterator object
-print "Creating message pusher..."
 clientThreadIterator = ClientThreadIterator()
 
 # Create the socket
