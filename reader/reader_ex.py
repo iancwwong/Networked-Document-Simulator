@@ -343,8 +343,8 @@ class ListenThread(threading.Thread):
 					# Check for any errors
 					if (len(unknownPosts) == 1):
 						postData = unknownPosts[0].split('#')
-						if (postData[0] == 'Error'):
-							print "Error: " + postData[1]
+						if (postData[1] == 'Error'):
+							# Error requesting
 							continue
 					
 					# Insert each post into the database
@@ -737,6 +737,7 @@ def main():
 	chatThread.start()
 
 	# Run the reader
+	print "Reader is now up and running!\n"
 	commands = ['exit', 'help', 'display', 'post_to_forum', 'read_post']
 	listen_sockets = [sys.stdin]
 	reader_exit_req = False

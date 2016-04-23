@@ -489,6 +489,8 @@ class ClientThread(threading.Thread):
 
 				# Get a list of post ID's which are associated to the book and page
 				resp, result = serverDB.getPostsID(bookname, pagenum)
+
+				sendList = []	# to send
 				
 				# Check for any errors
 				if (resp != serverDB.OP_SUCCESS):
@@ -585,6 +587,8 @@ class ClientThread(threading.Thread):
 				# Send reject message
 				elif (msg_components[2] == 'Reject'):
 
+					aUsername = msg_components[4]
+					bUsername = self.client.user_name
 					print "%s has rejected the invitation. Forwarding response to %s..." % (bUsername, aUsername)
 
 					# Get username and clientThread obj of rejected client
