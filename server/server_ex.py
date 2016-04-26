@@ -587,7 +587,7 @@ class ClientThread(threading.Thread):
 				# Send reject message
 				elif (msg_components[2] == 'Reject'):
 
-					aUsername = msg_components[4]
+					aUsername = msg_components[3]
 					bUsername = self.client.user_name
 					print "%s has rejected the invitation. Forwarding response to %s..." % (bUsername, aUsername)
 
@@ -596,7 +596,7 @@ class ClientThread(threading.Thread):
 					aThread = clientThreadIterator.getClientThread(aUsername)
 					
 					# Send reject message
-					aThread.startChat(False)
+					aThread.startChat(False, bUsername)
 
 			else:
 				# Unknown type of message
